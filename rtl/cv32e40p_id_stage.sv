@@ -1,67 +1,14 @@
-// Copyright 2018 ETH Zurich and University of Bologna.
-// Copyright and related rights are licensed under the Solderpad Hardware
-// License, Version 0.51 (the "License"); you may not use this file except in
-// compliance with the License.  You may obtain a copy of the License at
-// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
-// or agreed to in writing, software, hardware and materials distributed under
-// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-// CONDITIONS OF ANY KIND, either express or implied. See the License for the
-// specific language governing permissions and limitations under the License.
-
-////////////////////////////////////////////////////////////////////////////////
-// Engineer:       Renzo Andri - andrire@student.ethz.ch                      //
-//                                                                            //
-// Additional contributions by:                                               //
-//                 Igor Loi - igor.loi@unibo.it                               //
-//                 Andreas Traber - atraber@student.ethz.ch                   //
-//                 Sven Stucki - svstucki@student.ethz.ch                     //
-//                 Michael Gautschi - gautschi@iis.ee.ethz.ch                 //
-//                 Davide Schiavone - pschiavo@iis.ee.ethz.ch                 //
-//                                                                            //
-// Design Name:    Instruction Decode Stage                                   //
-// Project Name:   RI5CY                                                      //
-// Language:       SystemVerilog                                              //
-//                                                                            //
-// Description:    Decode stage of the core. It decodes the instructions      //
-//                 and hosts the register file.                               //
-//                                                                            //
-////////////////////////////////////////////////////////////////////////////////
-
 module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*;
-#(
-  parameter PULP_XPULP        =  1,                     // PULP ISA Extension (including PULP specific CSRs and hardware loop, excluding p.elw)
-  parameter PULP_CLUSTER      =  0,
-  parameter N_HWLP            =  2,
-  parameter N_HWLP_BITS       =  $clog2(N_HWLP),
-  parameter PULP_SECURE       =  0,
-  parameter USE_PMP           =  0,
-  parameter A_EXTENSION       =  0,
-  parameter APU               =  0,
-  parameter FPU               =  0,
-  parameter PULP_ZFINX        =  0,
-  parameter APU_NARGS_CPU     =  3,
-  parameter APU_WOP_CPU       =  6,
-  parameter APU_NDSFLAGS_CPU  = 15,
-  parameter APU_NUSFLAGS_CPU  =  5,
-  parameter DEBUG_TRIGGER_EN  =  1
-)
 (
-    input  logic        clk,                    // Gated clock
-    input  logic        clk_ungated_i,          // Ungated clock
+    input  logic        clk,
     input  logic        rst_n,
 
-    input  logic        scan_cg_en_i,
-
-    input  logic        fetch_enable_i,
     output logic        ctrl_busy_o,
     output logic        is_decoding_o,
 
     // Interface to IF stage
     input  logic              instr_valid_i,
     input  logic       [31:0] instr_rdata_i,      // comes from pipeline of IF stage
-    output logic              instr_req_o,
-    input  logic              is_compressed_i,
-    input  logic              illegal_c_insn_i,
 
     // Jumps and branches
     output logic        branch_in_ex_o,
@@ -74,9 +21,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
     output logic [3:0]  pc_mux_o,
     output logic [2:0]  exc_pc_mux_o,
     output logic [1:0]  trap_addr_mux_o,
-
-
-    input  logic        is_fetch_failed_i,
 
     input  logic [31:0] pc_id_i,
 
@@ -163,18 +107,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
     output logic        csr_restore_uret_id_o,
     output logic        csr_restore_dret_id_o,
     output logic        csr_save_cause_o,
-
-    // hwloop signals
-    output logic [N_HWLP-1:0] [31:0] hwlp_start_o,
-    output logic [N_HWLP-1:0] [31:0] hwlp_end_o,
-    output logic [N_HWLP-1:0] [31:0] hwlp_cnt_o,
-    output logic                     hwlp_jump_o,
-    output logic [31:0]              hwlp_target_o,
-
-    // hwloop signals from CS register
-    input  logic   [N_HWLP_BITS-1:0] csr_hwlp_regid_i,
-    input  logic               [2:0] csr_hwlp_we_i,
-    input  logic              [31:0] csr_hwlp_data_i,
 
     // Interface to load store unit
     output logic        data_req_ex_o,
@@ -402,23 +334,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   logic        data_req_id;
   logic        data_load_event_id;
 
-  // Atomic memory instruction
-  logic [5:0]  atop_id;
-
-  // hwloop signals
-  logic [N_HWLP_BITS-1:0] hwlp_regid, hwlp_regid_int;
-  logic             [2:0] hwlp_we, hwlp_we_int, hwlp_we_masked;
-  logic                   hwlp_target_mux_sel;
-  logic                   hwlp_start_mux_sel;
-  logic                   hwlp_cnt_mux_sel;
-
-  logic            [31:0] hwlp_target;
-  logic            [31:0] hwlp_start, hwlp_start_int;
-  logic            [31:0] hwlp_end;
-  logic            [31:0] hwlp_cnt, hwlp_cnt_int;
-  logic [N_HWLP-1:0]      hwlp_dec_cnt;
-  logic                   hwlp_valid;
-
   // CSR control
   logic        csr_access;
   csr_opcode_e csr_op;
@@ -509,12 +424,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   // immediate and an adder to subtract 1
   // The end result is a mask that has 1's set in the lower part
   assign imm_clip_type    = (32'h1 << instr[24:20]) - 1;
-
-  //-----------------------------------------------------------------------------
-  //-- FPU Register file enable:
-  //-- Taken from Cluster Config Reg if FPU reg file exists, or always disabled
-  //-----------------------------------------------------------------------------
-  assign fregfile_ena = FPU && !PULP_ZFINX ? 1'b1 : 1'b0;
 
   //---------------------------------------------------------------------------
   // source register selection regfile_fp_x=1 <=> CV32E40P_REG_x is a FP-register
@@ -782,115 +691,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
     endcase
   end
 
-  /////////////////////////////
-  // APU operand assignment  //
-  /////////////////////////////
-  // read regs
-  generate
-    if (APU == 1) begin : gen_apu
-
-      if (APU_NARGS_CPU >= 1)
-       assign apu_operands[0] = alu_operand_a;
-      if (APU_NARGS_CPU >= 2)
-       assign apu_operands[1] = alu_operand_b;
-      if (APU_NARGS_CPU >= 3)
-       assign apu_operands[2] = alu_operand_c;
-
-      // write reg
-      assign apu_waddr = regfile_alu_waddr_id;
-
-      // flags
-      assign apu_flags = (FPU == 1) ? {fpu_int_fmt, fpu_src_fmt, fpu_dst_fmt, fp_rnd_mode} : '0;
-
-      // dependency checks
-      always_comb begin
-        unique case (alu_op_a_mux_sel)
-          OP_A_REGA_OR_FWD: begin
-             apu_read_regs[0]        = regfile_addr_ra_id;
-             apu_read_regs_valid [0] = 1'b1;
-          end // OP_A_REGA_OR_FWD:
-          OP_A_REGB_OR_FWD: begin
-             apu_read_regs[0]        = regfile_addr_rb_id;
-             apu_read_regs_valid[0]  = 1'b1;
-          end
-          default: begin
-             apu_read_regs[0]        = regfile_addr_ra_id;
-             apu_read_regs_valid [0] = 1'b0;
-          end
-        endcase
-       end
-
-      always_comb begin
-        unique case (alu_op_b_mux_sel)
-          OP_B_REGA_OR_FWD: begin
-             apu_read_regs[1]       = regfile_addr_ra_id;
-             apu_read_regs_valid[1] = 1'b1;
-          end
-          OP_B_REGB_OR_FWD: begin
-             apu_read_regs[1]       = regfile_addr_rb_id;
-             apu_read_regs_valid[1] = 1'b1;
-          end
-          OP_B_REGC_OR_FWD: begin
-             apu_read_regs[1]       = regfile_addr_rc_id;
-             apu_read_regs_valid[1] = 1'b1;
-          end
-          default: begin
-             apu_read_regs[1]        = regfile_addr_rb_id;
-             apu_read_regs_valid [1] = 1'b0;
-          end
-        endcase
-       end
-
-      always_comb begin
-        unique case (alu_op_c_mux_sel)
-          OP_C_REGB_OR_FWD: begin
-             apu_read_regs[2]       = regfile_addr_rb_id;
-             apu_read_regs_valid[2] = 1'b1;
-          end
-          OP_C_REGC_OR_FWD: begin
-             apu_read_regs[2]       = regfile_addr_rc_id;
-             apu_read_regs_valid[2] = 1'b1;
-          end
-          default: begin
-             apu_read_regs[2]        = regfile_addr_rc_id;
-             apu_read_regs_valid [2] = 1'b0;
-          end
-        endcase
-       end
-
-      assign apu_write_regs[0]        = regfile_alu_waddr_id;
-      assign apu_write_regs_valid [0] = regfile_alu_we_id;
-
-      assign apu_write_regs[1]        = regfile_waddr_id;
-      assign apu_write_regs_valid[1]  = regfile_we_id;
-
-      assign apu_read_regs_o          = apu_read_regs;
-      assign apu_read_regs_valid_o    = apu_read_regs_valid;
-
-      assign apu_write_regs_o         = apu_write_regs;
-      assign apu_write_regs_valid_o   = apu_write_regs_valid;
-    end else begin : gen_no_apu
-      for (genvar i=0; i<APU_NARGS_CPU; i++) begin : gen_apu_tie_off
-        assign apu_operands[i]       = '0;
-      end
-
-      assign apu_read_regs           = '0;
-      assign apu_read_regs_valid     = '0;
-      assign apu_write_regs          = '0;
-      assign apu_write_regs_valid    = '0;
-      assign apu_waddr               = '0;
-      assign apu_flags               = '0;
-      assign apu_write_regs_o        = '0;
-      assign apu_read_regs_o         = '0;
-      assign apu_write_regs_valid_o  = '0;
-      assign apu_read_regs_valid_o   = '0;
-    end
-  endgenerate
-
-  assign apu_perf_dep_o      = apu_stall;
-  // stall when we access the CSR after a multicycle APU instruction
-  assign csr_apu_stall       = (csr_access & (apu_en_ex_o & (apu_lat_ex_o[1] == 1'b1) | apu_busy_i));
-
   /////////////////////////////////////////////////////////
   //  ____  _____ ____ ___ ____ _____ _____ ____  ____   //
   // |  _ \| ____/ ___|_ _/ ___|_   _| ____|  _ \/ ___|  //
@@ -901,12 +701,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   /////////////////////////////////////////////////////////
 
   cv32e40p_register_file
-  #(
-    .ADDR_WIDTH         ( 6                  ),
-    .DATA_WIDTH         ( 32                 ),
-    .FPU                ( FPU                ),
-    .PULP_ZFINX         ( PULP_ZFINX         )
-  )
   register_file_i
   (
     .clk                ( clk                ),
@@ -929,12 +723,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
     // Write port a
     .waddr_a_i          ( regfile_waddr_wb_i ),
     .wdata_a_i          ( regfile_wdata_wb_i ),
-    .we_a_i             ( regfile_we_wb_i    ),
-
-    // Write port b
-    .waddr_b_i          ( regfile_alu_waddr_fw_i ),
-    .wdata_b_i          ( regfile_alu_wdata_fw_i ),
-    .we_b_i             ( regfile_alu_we_fw_i )
+    .we_a_i             ( regfile_we_wb_i    )
   );
 
 
@@ -948,16 +737,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   ///////////////////////////////////////////////
 
   cv32e40p_decoder
-    #(
-      .PULP_XPULP          ( PULP_XPULP           ),
-      .PULP_CLUSTER        ( PULP_CLUSTER         ),
-      .A_EXTENSION         ( A_EXTENSION          ),
-      .FPU                 ( FPU                  ),
-      .PULP_SECURE         ( PULP_SECURE          ),
-      .USE_PMP             ( USE_PMP              ),
-      .APU_WOP_CPU         ( APU_WOP_CPU          ),
-      .DEBUG_TRIGGER_EN    ( DEBUG_TRIGGER_EN     )
-      )
   decoder_i
   (
     // controller related signals
@@ -1085,10 +864,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   ////////////////////////////////////////////////////////////////////
 
   cv32e40p_controller
-  #(
-    .PULP_CLUSTER ( PULP_CLUSTER ),
-    .PULP_XPULP   ( PULP_XPULP   )
-  )
   controller_i
   (
     .clk                            ( clk                    ),         // Gated clock
@@ -1269,9 +1044,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
 ////////////////////////////////////////////////////////////////////////
 
   cv32e40p_int_controller
-  #(
-    .PULP_SECURE(PULP_SECURE)
-   )
   int_controller_i
   (
     .clk                  ( clk                ),
@@ -1294,114 +1066,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
     .u_ie_i               ( u_irq_enable_i     ),
     .current_priv_lvl_i   ( current_priv_lvl_i )
   );
-
-  generate
-  if (PULP_XPULP) begin : gen_hwloop_regs
-
-    ///////////////////////////////////////////////
-    //  _   ___        ___     ___   ___  ____   //
-    // | | | \ \      / / |   / _ \ / _ \|  _ \  //
-    // | |_| |\ \ /\ / /| |  | | | | | | | |_) | //
-    // |  _  | \ V  V / | |__| |_| | |_| |  __/  //
-    // |_| |_|  \_/\_/  |_____\___/ \___/|_|     //
-    //                                           //
-    ///////////////////////////////////////////////
-
-
-      cv32e40p_hwloop_regs
-      #(
-        .N_REGS ( N_HWLP )
-      )
-      hwloop_regs_i
-      (
-        .clk                   ( clk                     ),
-        .rst_n                 ( rst_n                   ),
-
-        // from ID
-        .hwlp_start_data_i     ( hwlp_start              ),
-        .hwlp_end_data_i       ( hwlp_end                ),
-        .hwlp_cnt_data_i       ( hwlp_cnt                ),
-        .hwlp_we_i             ( hwlp_we                 ),
-        .hwlp_regid_i          ( hwlp_regid              ),
-
-        // from controller
-        .valid_i               ( hwlp_valid              ),
-
-        // to hwloop controller
-        .hwlp_start_addr_o     ( hwlp_start_o            ),
-        .hwlp_end_addr_o       ( hwlp_end_o              ),
-        .hwlp_counter_o        ( hwlp_cnt_o              ),
-
-        // from hwloop controller
-        .hwlp_dec_cnt_i        ( hwlp_dec_cnt            )
-      );
-
-      assign hwlp_valid     = instr_valid_i & clear_instr_valid_o;
-
-      // hwloop register id
-      assign hwlp_regid_int = instr[7];   // rd contains hwloop register id
-
-      // hwloop target mux
-      always_comb begin
-        case (hwlp_target_mux_sel)
-          1'b0: hwlp_target = pc_id_i + {imm_iz_type[30:0], 1'b0};
-          1'b1: hwlp_target = pc_id_i + {imm_z_type[30:0], 1'b0};
-        endcase
-      end
-
-      // hwloop start mux
-      always_comb begin
-        case (hwlp_start_mux_sel)
-          1'b0: hwlp_start_int = hwlp_target;   // for PC + I imm
-          1'b1: hwlp_start_int = pc_id_i+4;       // for next PC
-        endcase
-      end
-
-
-      // hwloop cnt mux
-      always_comb begin : hwlp_cnt_mux
-        case (hwlp_cnt_mux_sel)
-          1'b0: hwlp_cnt_int = imm_iz_type;
-          1'b1: hwlp_cnt_int = operand_a_fw_id;
-        endcase;
-      end
-
-      /*
-        when hwlp_mask is 1, the controller is about to take an interrupt
-        the xEPC is going to have the hwloop instruction PC, therefore, do not update the
-        hwloop registers to make clear that the instruction hasn't been executed.
-        Although it may not be a HW bugs causing uninteded behaviours,
-        it helps verifications processes when checking the hwloop regs
-      */
-      assign hwlp_we_masked = hwlp_we_int & ~{3{hwlp_mask}} & {3{id_ready_o}};
-
-      // multiplex between access from instructions and access via CSR registers
-      assign hwlp_start = hwlp_we_masked[0] ? hwlp_start_int : csr_hwlp_data_i;
-      assign hwlp_end   = hwlp_we_masked[1] ? hwlp_target    : csr_hwlp_data_i;
-      assign hwlp_cnt   = hwlp_we_masked[2] ? hwlp_cnt_int   : csr_hwlp_data_i;
-      assign hwlp_regid = (|hwlp_we_masked) ? hwlp_regid_int : csr_hwlp_regid_i;
-      assign hwlp_we    = (|hwlp_we_masked) ? hwlp_we_masked : csr_hwlp_we_i;
-
-  end else begin: gen_no_hwloop_regs
-
-    assign hwlp_start_o   = 'b0;
-    assign hwlp_end_o     = 'b0;
-    assign hwlp_cnt_o     = 'b0;
-    assign hwlp_valid     = 'b0;
-    assign hwlp_regid_int = 'b0;
-    assign hwlp_target    = 'b0;
-    assign hwlp_start_int = 'b0;
-    assign hwlp_cnt_int   = 'b0;
-    assign hwlp_we_masked = 'b0;
-    assign hwlp_start     = 'b0;
-    assign hwlp_end       = 'b0;
-    assign hwlp_cnt       = 'b0;
-    assign hwlp_regid     = 'b0;
-    assign hwlp_we        = 'b0;
-
-  end
-  endgenerate
-
 
   /////////////////////////////////////////////////////////////////////////////////
   //   ___ ____        _______  __  ____ ___ ____  _____ _     ___ _   _ _____   //
@@ -1677,142 +1341,5 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   assign id_ready_o = ((~misaligned_stall) & (~jr_stall) & (~load_stall) & (~apu_stall) & (~csr_apu_stall) & ex_ready_i);
   assign id_valid_o = (~halt_id) & id_ready_o;
   assign halt_if_o  = halt_if;
-
-
-  //----------------------------------------------------------------------------
-  // Assertions
-  //----------------------------------------------------------------------------
-  `ifdef CV32E40P_ASSERT_ON
-
-    always_comb begin
-      if (FPU==1) begin
-        assert (APU_NDSFLAGS_CPU >= C_RM+2*cv32e40p_fpu_pkg::FP_FORMAT_BITS+cv32e40p_fpu_pkg::INT_FORMAT_BITS)
-          else $error("[apu] APU_NDSFLAGS_CPU APU flagbits is smaller than %0d", C_RM+2*cv32e40p_fpu_pkg::FP_FORMAT_BITS+cv32e40p_fpu_pkg::INT_FORMAT_BITS);
-      end
-    end
-
-    // make sure that branch decision is valid when jumping
-    a_br_decision : assert property (
-      @(posedge clk) (branch_in_ex_o) |-> (branch_decision_i !== 1'bx) ) else begin $warning("%t, Branch decision is X in module %m", $time); $stop; end
-
-    // the instruction delivered to the ID stage should always be valid
-    a_valid_instr : assert property (
-      @(posedge clk) (instr_valid_i & (~illegal_c_insn_i)) |-> (!$isunknown(instr)) ) else $warning("%t, Instruction is valid, but has at least one X", $time);
-
-    // Check that instruction after taken branch is flushed (more should actually be flushed, but that is not checked here)
-    // and that EX stage is ready to receive flushed instruction immediately
-    property p_branch_taken_ex;
-       @(posedge clk) disable iff (!rst_n) (branch_taken_ex == 1'b1) |-> ((ex_ready_i == 1'b1) &&
-                                                                          (alu_en == 1'b0) && (apu_en == 1'b0) &&
-                                                                          (mult_en == 1'b0) && (mult_int_en == 1'b0) &&
-                                                                          (mult_dot_en == 1'b0) && (regfile_we_id == 1'b0) &&
-                                                                          (regfile_alu_we_id == 1'b0) && (data_req_id == 1'b0));
-    endproperty
-
-    a_branch_taken_ex : assert property(p_branch_taken_ex);
-
-    // Check that if IRQ PC update does not coincide with IRQ related CSR write
-    // MIE is excluded from the check because it has a bypass.
-    property p_irq_csr;
-       @(posedge clk) disable iff (!rst_n) (pc_set_o && (pc_mux_o == PC_EXCEPTION) && ((exc_pc_mux_o == EXC_PC_EXCEPTION) || (exc_pc_mux_o == EXC_PC_IRQ)) &&
-                                            csr_access_ex_o && (csr_op_ex_o != CSR_OP_READ)) |->
-                                           ((alu_operand_b_ex_o[11:0] != CSR_MSTATUS) && (alu_operand_b_ex_o[11:0] != CSR_USTATUS) &&
-                                            (alu_operand_b_ex_o[11:0] != CSR_MEPC) && (alu_operand_b_ex_o[11:0] != CSR_UEPC) &&
-                                            (alu_operand_b_ex_o[11:0] != CSR_MCAUSE) && (alu_operand_b_ex_o[11:0] != CSR_UCAUSE) &&
-                                            (alu_operand_b_ex_o[11:0] != CSR_MTVEC) && (alu_operand_b_ex_o[11:0] != CSR_UTVEC));
-    endproperty
-
-    a_irq_csr : assert property(p_irq_csr);
-
-    // Check that xret does not coincide with CSR write (to avoid using wrong return address)
-    // This check is more strict than really needed; a CSR instruction would be allowed in EX as long
-    // as its write action happens before the xret CSR usage
-    property p_xret_csr;
-       @(posedge clk) disable iff (!rst_n) (pc_set_o && ((pc_mux_o == PC_MRET) || (pc_mux_o == PC_URET) || (pc_mux_o == PC_DRET))) |->
-                                           (!(csr_access_ex_o && (csr_op_ex_o != CSR_OP_READ)));
-    endproperty
-
-    a_xret_csr : assert property(p_xret_csr);
-
-    generate
-    if (!A_EXTENSION) begin : gen_no_a_extension_assertions
-
-      // Check that A extension opcodes are decoded as illegal when A extension not enabled
-      property p_illegal_0;
-         @(posedge clk) disable iff (!rst_n) (instr[6:0] == OPCODE_AMO) |-> (illegal_insn_dec == 'b1);
-      endproperty
-
-      a_illegal_0 : assert property(p_illegal_0);
-
-    end
-    endgenerate
-
-    generate
-    if (!PULP_XPULP) begin : gen_no_pulp_xpulp_assertions
-
-      // Check that PULP extension opcodes are decoded as illegal when PULP extension is not enabled
-      property p_illegal_1;
-         @(posedge clk) disable iff (!rst_n) ((instr[6:0] == OPCODE_LOAD_POST) || (instr[6:0] == OPCODE_STORE_POST) || (instr[6:0] == OPCODE_PULP_OP) ||
-                                              (instr[6:0] == OPCODE_HWLOOP) || (instr[6:0] == OPCODE_VECOP)) |-> (illegal_insn_dec == 'b1);
-      endproperty
-
-      a_illegal_1 : assert property(p_illegal_1);
-
-      // Check that certain ALU operations are not used when PULP extension is not enabled
-      property p_alu_op;
-         @(posedge clk) disable iff (!rst_n) (1'b1) |-> ( (alu_operator != ALU_ADDU ) && (alu_operator != ALU_SUBU ) &&
-                                                           (alu_operator != ALU_ADDR ) && (alu_operator != ALU_SUBR ) &&
-                                                           (alu_operator != ALU_ADDUR) && (alu_operator != ALU_SUBUR) &&
-                                                           (alu_operator != ALU_ROR) && (alu_operator != ALU_BEXT) &&
-                                                           (alu_operator != ALU_BEXTU) && (alu_operator != ALU_BINS) &&
-                                                           (alu_operator != ALU_BCLR) && (alu_operator != ALU_BSET) &&
-                                                           (alu_operator != ALU_BREV) && (alu_operator != ALU_FF1) &&
-                                                           (alu_operator != ALU_FL1) && (alu_operator != ALU_CNT) &&
-                                                           (alu_operator != ALU_CLB) && (alu_operator != ALU_EXTS) &&
-                                                           (alu_operator != ALU_EXT) && (alu_operator != ALU_LES) &&
-                                                           (alu_operator != ALU_LEU) && (alu_operator != ALU_GTS) &&
-                                                           (alu_operator != ALU_GTU) && (alu_operator != ALU_SLETS) &&
-                                                           (alu_operator != ALU_SLETU) && (alu_operator != ALU_ABS) &&
-                                                           (alu_operator != ALU_CLIP) && (alu_operator != ALU_CLIPU) &&
-                                                           (alu_operator != ALU_INS) && (alu_operator != ALU_MIN) &&
-                                                           (alu_operator != ALU_MINU) && (alu_operator != ALU_MAX) &&
-                                                           (alu_operator != ALU_MAXU) && (alu_operator != ALU_SHUF) &&
-                                                           (alu_operator != ALU_SHUF2) && (alu_operator != ALU_PCKLO) &&
-                                                           (alu_operator != ALU_PCKHI) );
-      endproperty
-
-      a_alu_op : assert property(p_alu_op);
-
-      // Check that certain vector modes are not used when PULP extension is not enabled
-      property p_vector_mode;
-         @(posedge clk) disable iff (!rst_n) (1'b1) |-> ( (alu_vec_mode != VEC_MODE8 ) && (alu_vec_mode != VEC_MODE16 ) );
-      endproperty
-
-      a_vector_mode : assert property(p_vector_mode);
-
-      // Check that certain multiplier operations are not used when PULP extension is not enabled
-      property p_mul_op;
-         @(posedge clk) disable iff (!rst_n) (mult_int_en == 1'b1) |-> ( (mult_operator != MUL_MSU32) && (mult_operator != MUL_I) &&
-                                                                         (mult_operator != MUL_IR) && (mult_operator != MUL_DOT8) &&
-                                                                         (mult_operator != MUL_DOT16) );
-      endproperty
-
-      a_mul_op : assert property(p_mul_op);
-
-    end
-    endgenerate
-
-   // Check that illegal instruction has no other side effects
-    property p_illegal_2;
-       @(posedge clk) disable iff (!rst_n) (illegal_insn_dec == 1'b1) |-> !(ebrk_insn_dec || mret_insn_dec || uret_insn_dec || dret_insn_dec ||
-                                                                            ecall_insn_dec || wfi_insn_dec || fencei_insn_dec ||
-                                                                            alu_en || mult_int_en || mult_dot_en || apu_en ||
-                                                                            regfile_we_id || regfile_alu_we_id ||
-                                                                            csr_op != CSR_OP_READ || data_req_id);
-    endproperty
-
-    a_illegal_2 : assert property(p_illegal_2);
-
-  `endif
 
 endmodule // cv32e40p_id_stage

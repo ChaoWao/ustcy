@@ -1,30 +1,4 @@
-// Copyright 2018 ETH Zurich and University of Bologna.
-// Copyright and related rights are licensed under the Solderpad Hardware
-// License, Version 0.51 (the "License"); you may not use this file except in
-// compliance with the License.  You may obtain a copy of the License at
-// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
-// or agreed to in writing, software, hardware and materials distributed under
-// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-// CONDITIONS OF ANY KIND, either express or implied. See the License for the
-// specific language governing permissions and limitations under the License.
-
-////////////////////////////////////////////////////////////////////////////////
-// Engineer:       Davide Schiavone - pschiavo@iis.ee.ethz.ch                 //
-//                                                                            //
-// Additional contributions by:                                               //
-//                                                                            //
-// Design Name:    Interrupt Controller                                       //
-// Project Name:   RI5CY                                                      //
-// Language:       SystemVerilog                                              //
-//                                                                            //
-// Description:    Interrupt Controller of the pipelined processor            //
-//                                                                            //
-////////////////////////////////////////////////////////////////////////////////
-
 module cv32e40p_int_controller import cv32e40p_pkg::*;
-#(
-  parameter PULP_SECURE = 0
-)
 (
   input  logic        clk,
   input  logic        rst_n,
@@ -77,13 +51,7 @@ module cv32e40p_int_controller import cv32e40p_pkg::*;
   assign irq_wu_ctrl_o = |(irq_i & mie_bypass_i);
 
   // Global interrupt enable
-  generate
-    if (PULP_SECURE) begin : gen_pulp_secure
-      assign global_irq_enable = ((u_ie_i || irq_sec_i) && current_priv_lvl_i == PRIV_LVL_U) || (m_ie_i && current_priv_lvl_i == PRIV_LVL_M);
-    end else begin : gen_no_pulp_secure
-      assign global_irq_enable = m_ie_i;
-    end
-  endgenerate
+  assign global_irq_enable = m_ie_i;
 
   // Request to take interrupt if there is a locally enabled interrupt while interrupts are also enabled globally
   assign irq_req_ctrl_o = (|irq_local_qual) && global_irq_enable;
