@@ -1,7 +1,4 @@
-module cv32e40p_core import cv32e40p_apu_core_pkg::*;
-#(
-    parameter NUM_MHPMCOUNTERS    =  1
-)
+module cv32e40p_core
 (
     // Clock and Reset
     input  logic        clk_i,
@@ -14,296 +11,217 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
     input  logic [31:0] hart_id_i,
     input  logic [31:0] dm_exception_addr_i,
 
-  // Instruction memory interface
-  output logic        instr_req_o,
-  input  logic        instr_gnt_i,
-  input  logic        instr_rvalid_i,
-  output logic [31:0] instr_addr_o,
-  input  logic [31:0] instr_rdata_i,
+    // Instruction memory interface
+    output logic [31:0] instr_addr_o,
+    input  logic [31:0] instr_rdata_i,
 
-  // Data memory interface
-  output logic        data_req_o,
-  input  logic        data_gnt_i,
-  input  logic        data_rvalid_i,
-  output logic        data_we_o,
-  output logic [3:0]  data_be_o,
-  output logic [31:0] data_addr_o,
-  output logic [31:0] data_wdata_o,
-  input  logic [31:0] data_rdata_i,
+    // Data memory interface
+    output logic        data_we_o,
+    output logic [3:0]  data_be_o,
+    output logic [31:0] data_addr_o,
+    output logic [31:0] data_wdata_o,
+    input  logic [31:0] data_rdata_i,
   
-  // Interrupt inputs
-  input  logic [31:0] irq_i,                    // CLINT interrupts + CLINT extension interrupts
-  output logic        irq_ack_o,
-  output logic [4:0]  irq_id_o,
+    // Interrupt inputs
+    input  logic [31:0] irq_i,                    // CLINT interrupts + CLINT extension interrupts
+    output logic        irq_ack_o,
+    output logic [4:0]  irq_id_o,
 
-  // Debug Interface
-  input  logic        debug_req_i,
-  output logic        debug_havereset_o,
-  output logic        debug_running_o,
-  output logic        debug_halted_o
+    // Debug Interface
+    input  logic        debug_req_i,
+    output logic        debug_havereset_o,
+    output logic        debug_running_o,
+    output logic        debug_halted_o
 );
 
-  import cv32e40p_pkg::*;
+import cv32e40p_pkg::*;
 
-  // Unused parameters and signals (left in code for future design extensions)
-  localparam PULP_SECURE         =  0;
-  localparam N_PMP_ENTRIES       = 16;
-  localparam USE_PMP             =  0;          // if PULP_SECURE is 1, you can still not use the PMP
-  localparam A_EXTENSION         =  0;
-  localparam DEBUG_TRIGGER_EN    =  1;
+// IF/ID signals
+logic              instr_valid_id;
+logic [31:0]       instr_rdata_id;
 
-  // PULP bus interface behavior
-  // If enabled will allow non-stable address phase signals during waited instructions requests and
-  // will re-introduce combinatorial paths from instr_rvalid_i to instr_req_o and from from data_rvalid_i
-  // to data_req_o
-  localparam PULP_OBI            = 0;
-  localparam APU         = (FPU==1) ? 1 : 0;
+logic              clear_instr_valid;
+logic              pc_set;
 
+logic [3:0]        pc_mux_id;         // Mux selector for next PC
+logic [2:0]        exc_pc_mux_id; // Mux selector for exception PC
+logic [4:0]        m_exc_vec_pc_mux_id; // Mux selector for vectored IRQ PC
+logic [4:0]        u_exc_vec_pc_mux_id; // Mux selector for vectored IRQ PC
+logic [4:0]        exc_cause;
 
-  // IF/ID signals
-  logic              instr_valid_id;
-  logic [31:0]       instr_rdata_id;
+logic [1:0]        trap_addr_mux;
 
-  logic              clear_instr_valid;
-  logic              pc_set;
+logic [31:0]       pc_if;             // Program counter in IF stage
+logic [31:0]       pc_id;             // Program counter in ID stage
 
-  logic [3:0]        pc_mux_id;         // Mux selector for next PC
-  logic [2:0]        exc_pc_mux_id; // Mux selector for exception PC
-  logic [4:0]        m_exc_vec_pc_mux_id; // Mux selector for vectored IRQ PC
-  logic [4:0]        u_exc_vec_pc_mux_id; // Mux selector for vectored IRQ PC
-  logic [4:0]        exc_cause;
+// ID performance counter signals
+logic        is_decoding;
+logic        data_misaligned;
 
-  logic [1:0]        trap_addr_mux;
+// Jump and branch target and decision (EX->IF)
+logic [31:0] jump_target_id, jump_target_ex;
+logic        branch_in_ex;
+logic        branch_decision;
 
-  logic [31:0]       pc_if;             // Program counter in IF stage
-  logic [31:0]       pc_id;             // Program counter in ID stage
+logic [31:0] pc_ex; // PC of last executed branch or p.elw
 
-  // ID performance counter signals
-  logic        is_decoding;
+// ALU Control
+logic        alu_en_ex;
+alu_opcode_e alu_operator_ex;
+logic [31:0] alu_operand_a_ex;
+logic [31:0] alu_operand_b_ex;
 
-  logic        data_misaligned;
+// Register Write Control
+logic [5:0]  regfile_waddr_ex;
+logic        regfile_we_ex;
+logic [5:0]  regfile_waddr_fw_wb_o;        // From WB to ID
+logic        regfile_we_wb;
+logic [31:0] regfile_wdata;
 
-  // Jump and branch target and decision (EX->IF)
-  logic [31:0] jump_target_id, jump_target_ex;
-  logic        branch_in_ex;
-  logic        branch_decision;
+logic [5:0]  regfile_alu_waddr_ex;
+logic        regfile_alu_we_ex;
 
-  logic [31:0] pc_ex; // PC of last executed branch or p.elw
+logic [5:0]  regfile_alu_waddr_fw;
+logic        regfile_alu_we_fw;
+logic [31:0] regfile_alu_wdata_fw;
 
-  // ALU Control
-  logic        alu_en_ex;
-  alu_opcode_e alu_operator_ex;
-  logic [31:0] alu_operand_a_ex;
-  logic [31:0] alu_operand_b_ex;
-  logic [ 1:0] imm_vec_ext_ex;
-  logic [ 1:0] alu_vec_mode_ex;
-  logic        alu_is_clpx_ex, alu_is_subrot_ex;
-  logic [ 1:0] alu_clpx_shift_ex;
+// CSR control
+logic        csr_access_ex;
+csr_opcode_e csr_op_ex;
+logic [23:0] mtvec;
+logic [1:0]  mtvec_mode;
 
-  logic                        perf_apu_type;
-  logic                        perf_apu_cont;
-  logic                        perf_apu_dep;
-  logic                        perf_apu_wb;
+csr_opcode_e csr_op;
+csr_num_e    csr_addr;
+csr_num_e    csr_addr_int;
+logic [31:0] csr_rdata;
+logic [31:0] csr_wdata;
 
-  // Register Write Control
-  logic [5:0]  regfile_waddr_ex;
-  logic        regfile_we_ex;
-  logic [5:0]  regfile_waddr_fw_wb_o;        // From WB to ID
-  logic        regfile_we_wb;
-  logic [31:0] regfile_wdata;
-
-  logic [5:0]  regfile_alu_waddr_ex;
-  logic        regfile_alu_we_ex;
-
-  logic [5:0]  regfile_alu_waddr_fw;
-  logic        regfile_alu_we_fw;
-  logic [31:0] regfile_alu_wdata_fw;
-
-  // CSR control
-  logic        csr_access_ex;
-  csr_opcode_e csr_op_ex;
-  logic [23:0] mtvec, utvec;
-  logic [1:0]  mtvec_mode;
-  logic [1:0]  utvec_mode;
-
-  csr_opcode_e csr_op;
-  csr_num_e    csr_addr;
-  csr_num_e    csr_addr_int;
-  logic [31:0] csr_rdata;
-  logic [31:0] csr_wdata;
-  PrivLvl_t    current_priv_lvl;
-
-  // Data Memory Control:  From ID stage (id-ex pipe) <--> load store unit
-  logic        data_we_ex;
-  logic [5:0]  data_atop_ex;
-  logic [1:0]  data_type_ex;
-  logic [1:0]  data_sign_ext_ex;
-  logic [1:0]  data_reg_offset_ex;
-  logic        data_req_ex;
-  logic        data_load_event_ex;
-  logic        data_misaligned_ex;
+// Data Memory Control:  From ID stage (id-ex pipe) <--> load store unit
+logic        data_we_ex;
+logic [1:0]  data_type_ex;
+logic [1:0]  data_sign_ext_ex;
+logic [1:0]  data_reg_offset_ex;
+logic        data_req_ex;
+logic        data_misaligned_ex;
 
 
-  logic [31:0] lsu_rdata;
+logic [31:0] lsu_rdata;
 
-  // stall control
-  logic        halt_if;
-  logic        id_ready;
-  logic        ex_ready;
+// stall control
+logic        halt_if;
+logic        id_ready;
+logic        ex_ready;
 
-  logic        id_valid;
-  logic        ex_valid;
-  logic        wb_valid;
-
-  logic        lsu_ready_ex;
-  logic        lsu_ready_wb;
-
-  logic        apu_ready_wb;
-
-  // Signals between instruction core interface and pipe (if and id stages)
-  logic        instr_req_int;    // Id stage asserts a req to instruction core interface
-
-  // Interrupts
-  logic        m_irq_enable, u_irq_enable;
-  logic        csr_irq_sec;
-  logic [31:0] mepc, uepc, depc;
-  logic [31:0] mie_bypass;
-  logic [31:0] mip;
-
-  logic        csr_save_cause;
-  logic        csr_save_if;
-  logic        csr_save_id;
-  logic        csr_save_ex;
-  logic [5:0]  csr_cause;
-  logic        csr_restore_mret_id;
-  logic        csr_restore_uret_id;
-  logic        csr_restore_dret_id;
-  logic        csr_mtvec_init;
-
-  // HPM related control signals
-  logic [31:0] mcounteren;
-
-  // debug mode and dcsr configuration
-  logic        debug_mode;
-  logic [2:0]  debug_cause;
-  logic        debug_csr_save;
-  logic        debug_single_step;
-  logic        debug_ebreakm;
-  logic        debug_ebreaku;
-  logic        trigger_match;
-  logic        debug_p_elw_no_sleep;
-
-  // Performance Counters
-  logic        mhpmevent_minstret;
-  logic        mhpmevent_load;
-  logic        mhpmevent_store;
-  logic        mhpmevent_jump;
-  logic        mhpmevent_branch;
-  logic        mhpmevent_branch_taken;
-  logic        mhpmevent_compressed;
-  logic        mhpmevent_jr_stall;
-  logic        mhpmevent_imiss;
-  logic        mhpmevent_ld_stall;
-  logic        mhpmevent_pipe_stall;
-
-  logic        perf_imiss;
-
-  // Mux selector for vectored IRQ PC
-  assign m_exc_vec_pc_mux_id = (mtvec_mode == 2'b0) ? 5'h0 : exc_cause;
-  assign u_exc_vec_pc_mux_id = (utvec_mode == 2'b0) ? 5'h0 : exc_cause;
-
-  // PULP_SECURE == 0
-  assign irq_sec_i = 1'b0;
-
-  //////////////////////////////////////////////////
-  //   ___ _____   ____ _____  _    ____ _____    //
-  //  |_ _|  ___| / ___|_   _|/ \  / ___| ____|   //
-  //   | || |_    \___ \ | | / _ \| |  _|  _|     //
-  //   | ||  _|    ___) || |/ ___ \ |_| | |___    //
-  //  |___|_|     |____/ |_/_/   \_\____|_____|   //
-  //                                              //
-  //////////////////////////////////////////////////
-  cv32e40p_if_stage
-  #(
-    .PULP_XPULP          ( PULP_XPULP        ),
-    .PULP_OBI            ( PULP_OBI          ),
-    .PULP_SECURE         ( PULP_SECURE       ),
-    .FPU                 ( FPU               )
-  )
-  if_stage_i
-  (
-    .clk                 ( clk               ),
-    .rst_n               ( rst_ni            ),
-
-    // boot address
-    .boot_addr_i         ( boot_addr_i[31:0] ),
-    .dm_exception_addr_i ( dm_exception_addr_i[31:0] ),
-
-    // debug mode halt address
-    .dm_halt_addr_i      ( dm_halt_addr_i[31:0] ),
-
-    // trap vector location
-    .m_trap_base_addr_i  ( mtvec             ),
-    .u_trap_base_addr_i  ( utvec             ),
-    .trap_addr_mux_i     ( trap_addr_mux     ),
-
-    // instruction request control
-    .req_i               ( instr_req_int     ),
-
-    // instruction cache interface
-    .instr_req_o         ( instr_req_pmp     ),
-    .instr_addr_o        ( instr_addr_pmp    ),
-    .instr_gnt_i         ( instr_gnt_pmp     ),
-    .instr_rvalid_i      ( instr_rvalid_i    ),
-    .instr_rdata_i       ( instr_rdata_i     ),
-    .instr_err_i         ( 1'b0              ),  // Bus error (not used yet)
-    .instr_err_pmp_i     ( instr_err_pmp     ),  // PMP error
-
-    // outputs to ID stage
-    .instr_valid_id_o    ( instr_valid_id    ),
-    .instr_rdata_id_o    ( instr_rdata_id    ),
-    .is_fetch_failed_o   ( is_fetch_failed_id ),
-
-    // control signals
-    .clear_instr_valid_i ( clear_instr_valid ),
-    .pc_set_i            ( pc_set            ),
-
-    .mepc_i              ( mepc              ), // exception return address
-    .uepc_i              ( uepc              ), // exception return address
-
-    .depc_i              ( depc              ), // debug return address
-
-    .pc_mux_i            ( pc_mux_id         ), // sel for pc multiplexer
-    .exc_pc_mux_i        ( exc_pc_mux_id     ),
+logic        id_valid;
+logic        ex_valid;
+logic        wb_valid;
 
 
-    .pc_id_o             ( pc_id             ),
-    .pc_if_o             ( pc_if             ),
+// Interrupts
+logic        m_irq_enable;
+logic        csr_irq_sec;
+logic [31:0] mepc, uepc, depc;
+logic [31:0] mie_bypass;
+logic [31:0] mip;
 
-    .is_compressed_id_o  ( is_compressed_id  ),
-    .illegal_c_insn_id_o ( illegal_c_insn_id ),
+logic        csr_save_cause;
+logic        csr_save_if;
+logic        csr_save_id;
+logic        csr_save_ex;
+logic [5:0]  csr_cause;
+logic        csr_restore_mret_id;
+logic        csr_restore_uret_id;
+logic        csr_restore_dret_id;
+logic        csr_mtvec_init;
 
-    .m_exc_vec_pc_mux_i  ( m_exc_vec_pc_mux_id ),
-    .u_exc_vec_pc_mux_i  ( u_exc_vec_pc_mux_id ),
+// debug mode and dcsr configuration
+logic        debug_mode;
+logic [2:0]  debug_cause;
+logic        debug_csr_save;
+logic        debug_single_step;
+logic        debug_ebreakm;
+logic        debug_ebreaku;
+logic        trigger_match;
 
-    .csr_mtvec_init_o    ( csr_mtvec_init    ),
+// Mux selector for vectored IRQ PC
+assign m_exc_vec_pc_mux_id = exc_cause;
 
-    // from hwloop registers
-    .hwlp_jump_i         ( hwlp_jump         ),
-    .hwlp_target_i       ( hwlp_target       ),
+// IF
+cv32e40p_if_stage if_stage_i
+(
+.clk                 ( clk_i             ),
+.rst_n               ( rst_ni            ),
+
+// boot address
+.boot_addr_i         ( boot_addr_i ),
+.dm_exception_addr_i ( dm_exception_addr_i ),
+
+// debug mode halt address
+.dm_halt_addr_i      ( dm_halt_addr_i ),
+
+// trap vector location
+.m_trap_base_addr_i  ( mtvec             ),
+.u_trap_base_addr_i  ( utvec             ),
+.trap_addr_mux_i     ( trap_addr_mux     ),
+
+// instruction request control
+.req_i               ( instr_req_int     ),
+
+// instruction cache interface
+.instr_req_o         ( instr_req_pmp     ),
+.instr_addr_o        ( instr_addr_pmp    ),
+.instr_gnt_i         ( instr_gnt_pmp     ),
+.instr_rvalid_i      ( instr_rvalid_i    ),
+.instr_rdata_i       ( instr_rdata_i     ),
+.instr_err_i         ( 1'b0              ),  // Bus error (not used yet)
+.instr_err_pmp_i     ( instr_err_pmp     ),  // PMP error
+
+// outputs to ID stage
+.instr_valid_id_o    ( instr_valid_id    ),
+.instr_rdata_id_o    ( instr_rdata_id    ),
+.is_fetch_failed_o   ( is_fetch_failed_id ),
+
+// control signals
+.clear_instr_valid_i ( clear_instr_valid ),
+.pc_set_i            ( pc_set            ),
+
+.mepc_i              ( mepc              ), // exception return address
+.uepc_i              ( uepc              ), // exception return address
+
+.depc_i              ( depc              ), // debug return address
+
+.pc_mux_i            ( pc_mux_id         ), // sel for pc multiplexer
+.exc_pc_mux_i        ( exc_pc_mux_id     ),
 
 
-    // Jump targets
-    .jump_target_id_i    ( jump_target_id    ),
-    .jump_target_ex_i    ( jump_target_ex    ),
+.pc_id_o             ( pc_id             ),
+.pc_if_o             ( pc_if             ),
 
-    // pipeline stalls
-    .halt_if_i           ( halt_if           ),
-    .id_ready_i          ( id_ready          ),
+.is_compressed_id_o  ( is_compressed_id  ),
+.illegal_c_insn_id_o ( illegal_c_insn_id ),
 
-    .if_busy_o           ( if_busy           ),
-    .perf_imiss_o        ( perf_imiss        )
-  );
+.m_exc_vec_pc_mux_i  ( m_exc_vec_pc_mux_id ),
+.u_exc_vec_pc_mux_i  ( u_exc_vec_pc_mux_id ),
+
+.csr_mtvec_init_o    ( csr_mtvec_init    ),
+
+// from hwloop registers
+.hwlp_jump_i         ( hwlp_jump         ),
+.hwlp_target_i       ( hwlp_target       ),
+
+
+// Jump targets
+.jump_target_id_i    ( jump_target_id    ),
+.jump_target_ex_i    ( jump_target_ex    ),
+
+// pipeline stalls
+.halt_if_i           ( halt_if           ),
+.id_ready_i          ( id_ready          ),
+
+.if_busy_o           ( if_busy           ),
+.perf_imiss_o        ( perf_imiss        )
+);
 
 
   /////////////////////////////////////////////////
@@ -730,9 +648,6 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
 
     .busy_o                ( lsu_busy           )
   );
-
-  // Tracer signal
-  assign wb_valid = lsu_ready_wb & apu_ready_wb;
 
 
   //////////////////////////////////////

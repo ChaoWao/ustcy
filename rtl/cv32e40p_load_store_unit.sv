@@ -24,11 +24,7 @@ module cv32e40p_load_store_unit
     input  logic         addr_useincr_ex_i,    // use a + b or just a for address   -> from ex stage
 
     input  logic         data_misaligned_ex_i, // misaligned access in last ld/st   -> from ID/EX pipeline
-    output logic         data_misaligned_o,    // misaligned access was detected    -> to controller
-
-    // stall signal
-    output logic         lsu_ready_ex_o,       // LSU ready for new data in EX stage
-    output logic         lsu_ready_wb_o        // LSU ready for new data in WB stage
+    output logic         data_misaligned_o     // misaligned access was detected    -> to controller
 );
 
 
@@ -291,29 +287,7 @@ assign data_we_o = data_we_ex_i;
 assign data_be_o = data_be;
 assign data_wdata_o = data_wdata;
 
-// LSU WB stage is ready if it is not being used (i.e. no outstanding transfers, cnt_q = 0),
-// or if it WB stage is being used and the awaited response arrives (resp_rvalid).
-assign lsu_ready_wb_o = (cnt_q == 2'b00) ? 1'b1 : resp_valid;
-
-// LSU EX stage readyness requires two criteria to be met:
-// 
-// - A data request (data_req_ex_i) has been forwarded/accepted (trans_valid && trans_ready)
-// - The LSU WB stage is available such that EX and WB can be updated in lock step
-//
-// Default (if there is not even a data request) LSU EX is signaled to be ready, else
-// if there are no outstanding transactions the EX stage is ready again once the transaction
-// request is accepted (at which time this load/store will move to the WB stage), else
-// in case there is already at least one outstanding transaction (so WB is full) the EX 
-// and WB stage can only signal readiness in lock step (so resp_valid is used as well).
-
-assign lsu_ready_ex_o = (data_req_ex_i == 1'b0) ? 1'b1 :
-                      (cnt_q == 2'b00) ? (              trans_valid && trans_ready) : 
-                      (cnt_q == 2'b01) ? (resp_valid && trans_valid && trans_ready) : 
-                                          resp_valid;
-
 // Update signals for EX/WB registers (when EX has valid data itself and is ready for next)
-assign ctrl_update = lsu_ready_ex_o && data_req_ex_i;
-
-
+assign ctrl_update = data_req_ex_i;
 
 endmodule

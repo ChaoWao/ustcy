@@ -53,8 +53,6 @@ logic           alu_cmp_result;
 logic           regfile_we_lsu;
 logic [5:0]     regfile_waddr_lsu;
 
-logic           alu_ready;
-
 // ALU write port mux
 assign regfile_alu_we_fw_o = regfile_alu_we_i;
 assign regfile_alu_waddr_fw_o = regfile_alu_waddr_i;
@@ -121,7 +119,7 @@ cv32e40p_alu alu_i
   // As valid always goes to the right and ready to the left, and we are able
   // to finish branches without going to the WB stage, ex_valid does not
   // depend on ex_ready.
-  assign ex_ready_o = (alu_ready & lsu_ready_ex_i & wb_ready_i) | (branch_in_ex_i);
-  assign ex_valid_o = (csr_access_i | lsu_en_i) & (alu_ready & lsu_ready_ex_i & wb_ready_i);
+  assign ex_ready_o = (lsu_ready_ex_i & wb_ready_i) | (branch_in_ex_i);
+  assign ex_valid_o = (csr_access_i | lsu_en_i) & (lsu_ready_ex_i & wb_ready_i);
 
 endmodule
