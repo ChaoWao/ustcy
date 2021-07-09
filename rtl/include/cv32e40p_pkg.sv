@@ -71,26 +71,6 @@ typedef enum logic [ALU_OP_WIDTH-1:0]
 
 } alu_opcode_e;
 
-parameter MUL_OP_WIDTH = 3;
-
-typedef enum logic [MUL_OP_WIDTH-1:0]
-{
-
- MUL_MAC32 = 3'b000,
- MUL_MSU32 = 3'b001,
- MUL_I     = 3'b010,
- MUL_IR    = 3'b011,
- MUL_DOT8  = 3'b100,
- MUL_DOT16 = 3'b101,
- MUL_H     = 3'b110
-
- } mul_opcode_e;
-
-// vector modes
-parameter VEC_MODE32 = 2'b00;
-parameter VEC_MODE16 = 2'b10;
-parameter VEC_MODE8  = 2'b11;
-
 
 // FSM state encoding
 typedef enum logic [4:0] { RESET, BOOT_SET, SLEEP, WAIT_SLEEP, FIRST_FETCH,
@@ -107,9 +87,6 @@ parameter HALTED_INDEX = 2;
 
 typedef enum logic [2:0] { HAVERESET = 3'b001, RUNNING = 3'b010, HALTED = 3'b100 } debug_state_e;
 
-typedef enum logic {IDLE, BRANCH_WAIT} prefetch_state_e;
-
-typedef enum logic [2:0] {IDLE_MULT, STEP0, STEP1, STEP2, FINISH} mult_state_e;
 
 /////////////////////////////////////////////////////////
 //    ____ ____    ____            _     _             //
@@ -476,25 +453,6 @@ parameter IMMB_SHUF   = 4'b1000;
 parameter IMMB_CLIP   = 4'b1001;
 parameter IMMB_BI     = 4'b1011;
 
-// bit mask selection
-parameter BMASK_A_ZERO = 1'b0;
-parameter BMASK_A_S3   = 1'b1;
-
-parameter BMASK_B_S2   = 2'b00;
-parameter BMASK_B_S3   = 2'b01;
-parameter BMASK_B_ZERO = 2'b10;
-parameter BMASK_B_ONE  = 2'b11;
-
-parameter BMASK_A_REG  = 1'b0;
-parameter BMASK_A_IMM  = 1'b1;
-parameter BMASK_B_REG  = 1'b0;
-parameter BMASK_B_IMM  = 1'b1;
-
-
-// multiplication immediates
-parameter MIMM_ZERO    = 1'b0;
-parameter MIMM_S3      = 1'b1;
-
 // operand c selection
 parameter OP_C_REGC_OR_FWD = 2'b00;
 parameter OP_C_REGB_OR_FWD = 2'b01;
@@ -510,19 +468,6 @@ parameter BRANCH_COND = 2'b11; // conditional branches
 parameter JT_JAL  = 2'b01;
 parameter JT_JALR = 2'b10;
 parameter JT_COND = 2'b11;
-
-// Atomic operations
-parameter AMO_LR   = 5'b00010;
-parameter AMO_SC   = 5'b00011;
-parameter AMO_SWAP = 5'b00001;
-parameter AMO_ADD  = 5'b00000;
-parameter AMO_XOR  = 5'b00100;
-parameter AMO_AND  = 5'b01100;
-parameter AMO_OR   = 5'b01000;
-parameter AMO_MIN  = 5'b10000;
-parameter AMO_MAX  = 5'b10100;
-parameter AMO_MINU = 5'b11000;
-parameter AMO_MAXU = 5'b11100;
 
 ///////////////////////////////////////////////
 //   ___ _____   ____  _                     //

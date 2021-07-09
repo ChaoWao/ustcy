@@ -12,12 +12,10 @@ module cv32e40p_controller import cv32e40p_pkg::*;
   input  logic        illegal_insn_i,             // decoder encountered an invalid instruction
   input  logic        ecall_insn_i,               // decoder encountered an ecall instruction
   input  logic        mret_insn_i,                // decoder encountered an mret instruction
-  input  logic        uret_insn_i,                // decoder encountered an uret instruction
 
   input  logic        dret_insn_i,                // decoder encountered an dret instruction
 
   input  logic        mret_dec_i,
-  input  logic        uret_dec_i,
   input  logic        dret_dec_i,
 
   input  logic        wfi_i,                      // decoder wants to execute a WFI
@@ -27,9 +25,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
   // from IF/ID pipeline
   input  logic        instr_valid_i,              // instruction coming from IF/ID pipeline is valid
-
-  // from prefetcher
-  output logic        instr_req_o,                // Start fetching instructions
 
   // to prefetcher
   output logic        pc_set_o,                   // jump to address set by pc_mux
@@ -41,9 +36,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
   input  logic        data_req_ex_i,              // data memory access is currently performed in EX stage
   input  logic        data_we_ex_i,
   input  logic        data_misaligned_i,
-  input  logic        data_load_event_i,
-  input  logic        data_err_i,
-  output logic        data_err_ack_o,
 
   // jump/branch signals
   input  logic        branch_taken_ex_i,          // branch taken signal from EX ALU
@@ -52,10 +44,8 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
   // Interrupt Controller Signals
   input  logic        irq_req_ctrl_i,
-  input  logic        irq_sec_ctrl_i,
   input  logic [4:0]  irq_id_ctrl_i,
   input  logic        irq_wu_ctrl_i,
-  input  PrivLvl_t    current_priv_lvl_i,
 
   output logic        irq_ack_o,
   output logic [4:0]  irq_id_o,
@@ -69,7 +59,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
   input  logic         debug_req_i,
   input  logic         debug_single_step_i,
   input  logic         debug_ebreakm_i,
-  input  logic         debug_ebreaku_i,
   input  logic         trigger_match_i,
   output logic         debug_p_elw_no_sleep_o,
   output logic         debug_wfi_no_sleep_o,
@@ -81,9 +70,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
   output logic        csr_save_id_o,
   output logic        csr_save_ex_o,
   output logic [5:0]  csr_cause_o,
-  output logic        csr_irq_sec_o,
   output logic        csr_restore_mret_id_o,
-  output logic        csr_restore_uret_id_o,
 
   output logic        csr_restore_dret_id_o,
 
@@ -166,15 +153,10 @@ module cv32e40p_controller import cv32e40p_pkg::*;
   begin
     // Default values
 
-    instr_req_o            = 1'b1;
-
-    data_err_ack_o         = 1'b0;
-
     csr_save_if_o          = 1'b0;
     csr_save_id_o          = 1'b0;
     csr_save_ex_o          = 1'b0;
     csr_restore_mret_id_o  = 1'b0;
-    csr_restore_uret_id_o  = 1'b0;
 
     csr_restore_dret_id_o  = 1'b0;
 
@@ -185,7 +167,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
     trap_addr_mux_o        = TRAP_MACHINE;
 
     csr_cause_o            = '0;
-    csr_irq_sec_o          = 1'b0;
 
     pc_mux_o               = PC_BOOT;
     pc_set_o               = 1'b0;
@@ -206,8 +187,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
     branch_in_id           = ctrl_transfer_insn_in_id_i == BRANCH_COND;
     branch_in_id_dec       = ctrl_transfer_insn_in_dec_i == BRANCH_COND;
 
-    ebrk_force_debug_mode  = (debug_ebreakm_i && current_priv_lvl_i == PRIV_LVL_M) ||
-                             (debug_ebreaku_i && current_priv_lvl_i == PRIV_LVL_U);
+    ebrk_force_debug_mode  = debug_ebreakm_i;
     debug_csr_save_o       = 1'b0;
     debug_cause_o          = DBG_CAUSE_EBREAK;
     debug_mode_n           = debug_mode_q;
@@ -230,7 +210,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       RESET:
       begin
         is_decoding_o = 1'b0;
-        instr_req_o   = 1'b0;
           ctrl_fsm_ns = BOOT_SET;
       end
 
@@ -238,7 +217,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       BOOT_SET:
       begin
         is_decoding_o = 1'b0;
-        instr_req_o   = 1'b1;
         pc_mux_o      = PC_BOOT;
         pc_set_o      = 1'b1;
         if (debug_req_pending) begin
@@ -253,7 +231,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       begin
         is_decoding_o = 1'b0;
         ctrl_busy_o   = 1'b0;
-        instr_req_o   = 1'b0;
         halt_if_o     = 1'b1;
         halt_id_o     = 1'b1;
         ctrl_fsm_ns   = SLEEP;
@@ -265,20 +242,12 @@ module cv32e40p_controller import cv32e40p_pkg::*;
         // we begin execution when an
         // interrupt has arrived
         is_decoding_o = 1'b0;
-        instr_req_o   = 1'b0;
         halt_if_o     = 1'b1;
         halt_id_o     = 1'b1;
 
         // normal execution flow
         // in debug mode or single step mode we leave immediately (wfi=nop)
-        if (wake_from_sleep_o) begin
-          if (debug_req_pending) begin
-              ctrl_fsm_ns = DBG_TAKEN_IF;
-              debug_force_wakeup_n = 1'b1;
-          end else begin
-              ctrl_fsm_ns  = FIRST_FETCH;
-          end
-        end else begin
+        begin
           ctrl_busy_o = 1'b0;
         end
       end
@@ -304,17 +273,13 @@ module cv32e40p_controller import cv32e40p_pkg::*;
           pc_mux_o          = PC_EXCEPTION;
           exc_pc_mux_o      = EXC_PC_IRQ;
           exc_cause_o       = irq_id_ctrl_i;
-          csr_irq_sec_o     = irq_sec_ctrl_i;
 
           // IRQ interface
           irq_ack_o         = 1'b1;
           irq_id_o          = irq_id_ctrl_i;
 
-          if (irq_sec_ctrl_i)
-            trap_addr_mux_o  = TRAP_MACHINE;
-          else
-            trap_addr_mux_o  = current_priv_lvl_i == PRIV_LVL_U ? TRAP_USER : TRAP_MACHINE;
-
+          trap_addr_mux_o  = TRAP_MACHINE;
+            
           csr_save_cause_o  = 1'b1;
           csr_cause_o       = {1'b1,irq_id_ctrl_i};
           csr_save_if_o     = 1'b1;
@@ -368,17 +333,13 @@ module cv32e40p_controller import cv32e40p_pkg::*;
                 pc_mux_o          = PC_EXCEPTION;
                 exc_pc_mux_o      = EXC_PC_IRQ;
                 exc_cause_o       = irq_id_ctrl_i;
-                csr_irq_sec_o     = irq_sec_ctrl_i;
 
                 // IRQ interface
                 irq_ack_o         = 1'b1;
                 irq_id_o          = irq_id_ctrl_i;
 
-                if (irq_sec_ctrl_i)
                   trap_addr_mux_o  = TRAP_MACHINE;
-                else
-                  trap_addr_mux_o  = current_priv_lvl_i == PRIV_LVL_U ? TRAP_USER : TRAP_MACHINE;
-
+                  
                 csr_save_cause_o  = 1'b1;
                 csr_cause_o       = {1'b1,irq_id_ctrl_i};
                 csr_save_id_o     = 1'b1;
@@ -448,7 +409,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
                       ctrl_fsm_ns           = id_ready_i ? FLUSH_EX : DECODE;
                     end
 
-                    mret_insn_i | uret_insn_i | dret_insn_i: begin
+                    mret_insn_i | dret_insn_i: begin
                       halt_if_o     = 1'b1;
                       halt_id_o     = 1'b0;
                       ctrl_fsm_ns           = id_ready_i ? FLUSH_EX : DECODE;
@@ -457,11 +418,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
                     csr_status_i: begin
                       halt_if_o     = 1'b1;
                       ctrl_fsm_ns   = id_ready_i ? FLUSH_EX : DECODE;
-                    end
-
-                    data_load_event_i: begin
-                      ctrl_fsm_ns   = id_ready_i ? ELW_EXE : DECODE;
-                      halt_if_o     = 1'b1;
                     end
 
                     default: ;
@@ -494,7 +450,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
                             ctrl_fsm_ns = FLUSH_EX;
                         end
 
-                        mret_insn_i | uret_insn_i:
+                        mret_insn_i:
                         begin
                             ctrl_fsm_ns = FLUSH_EX;
                         end
@@ -527,20 +483,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
         halt_if_o = 1'b1;
         halt_id_o = 1'b1;
 
-        if (data_err_i)
-        begin //data error
-            // the current LW or SW have been blocked by the PMP
-            csr_save_ex_o     = 1'b1;
-            csr_save_cause_o  = 1'b1;
-            data_err_ack_o    = 1'b1;
-            //no jump in this stage as we have to wait one cycle to go to Machine Mode
-            csr_cause_o       = {1'b0, data_we_ex_i ? EXC_CAUSE_STORE_FAULT : EXC_CAUSE_LOAD_FAULT};
-            ctrl_fsm_ns       = FLUSH_WB;
-            //putting illegal to 0 as if it was 1, the core is going to jump to the exception of the EX stage,
-            //so the illegal was never executed
-            illegal_insn_n    = 1'b0;
-        end  //data erro
-        else if (ex_valid_i) begin
+        if (ex_valid_i) begin
           //check done to prevent data harzard in the CSR registers
           ctrl_fsm_ns = FLUSH_WB;
 
@@ -558,7 +501,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
               ecall_insn_i: begin
                 csr_save_id_o     = 1'b1;
                 csr_save_cause_o  = !debug_mode_q;
-                csr_cause_o       = {1'b0, current_priv_lvl_i == PRIV_LVL_U ? EXC_CAUSE_ECALL_UMODE : EXC_CAUSE_ECALL_MMODE};
+                csr_cause_o       = {1'b0, EXC_CAUSE_ECALL_MMODE};
               end
               default:;
             endcase // unique case (1'b1)
@@ -614,10 +557,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
                  csr_restore_mret_id_o =  !debug_mode_q;
                  ctrl_fsm_ns           = XRET_JUMP;
               end
-              uret_insn_i: begin
-                 csr_restore_uret_id_o =  !debug_mode_q;
-                 ctrl_fsm_ns           = XRET_JUMP;
-              end
               dret_insn_i: begin
                   csr_restore_dret_id_o = 1'b1;
                   ctrl_fsm_ns           = XRET_JUMP;
@@ -655,12 +594,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
           mret_dec_i: begin
               //mret
               pc_mux_o              = debug_mode_q ? PC_EXCEPTION : PC_MRET;
-              pc_set_o              = 1'b1;
-              exc_pc_mux_o          = EXC_PC_DBE; // only used if in debug_mode
-          end
-          uret_dec_i: begin
-              //uret
-              pc_mux_o              = debug_mode_q ? PC_EXCEPTION : PC_URET;
               pc_set_o              = 1'b1;
               exc_pc_mux_o          = EXC_PC_DBE; // only used if in debug_mode
           end
@@ -757,21 +690,9 @@ module cv32e40p_controller import cv32e40p_pkg::*;
         halt_if_o   = 1'b1;
         halt_id_o   = 1'b1;
 
-        if (data_err_i)
-        begin //data error
-            // the current LW or SW have been blocked by the PMP
-            csr_save_ex_o     = 1'b1;
-            csr_save_cause_o  = 1'b1;
-            data_err_ack_o    = 1'b1;
-            //no jump in this stage as we have to wait one cycle to go to Machine Mode
-            csr_cause_o       = {1'b0, data_we_ex_i ? EXC_CAUSE_STORE_FAULT : EXC_CAUSE_LOAD_FAULT};
-            ctrl_fsm_ns       = FLUSH_WB;
-        end  //data error
-        else begin
           if(debug_mode_q                          |
              trigger_match_i                       |
              (ebrk_force_debug_mode & ebrk_insn_i) |
-             data_load_event_i                     |
              debug_req_entry_q                     )
             begin
               ctrl_fsm_ns = DBG_TAKEN_ID;
@@ -780,13 +701,11 @@ module cv32e40p_controller import cv32e40p_pkg::*;
               // else must be debug_single_step_i
               ctrl_fsm_ns = DBG_TAKEN_IF;
             end
-        end
       end
       // Debug end
 
       default: begin
         is_decoding_o = 1'b0;
-        instr_req_o = 1'b0;
         ctrl_fsm_ns = RESET;
       end
     endcase
@@ -920,9 +839,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       debug_force_wakeup_q <= debug_force_wakeup_n;
     end
   end
-
-  // wakeup from sleep conditions
-  assign wake_from_sleep_o = irq_wu_ctrl_i || debug_req_pending || debug_mode_q;
 
   // debug mode
   assign debug_mode_o = debug_mode_q;

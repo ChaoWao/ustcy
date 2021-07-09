@@ -7,11 +7,9 @@ module cv32e40p_decoder import cv32e40p_pkg::*;
   output logic        ebrk_insn_o,             // trap instruction encountered
 
   output logic        mret_insn_o,             // return from exception instruction encountered (M)
-  output logic        uret_insn_o,             // return from exception instruction encountered (S)
   output logic        dret_insn_o,             // return from debug (M)
 
   output logic        mret_dec_o,              // return from exception instruction encountered (M) without deassert
-  output logic        uret_dec_o,              // return from exception instruction encountered (S) without deassert
   output logic        dret_dec_o,              // return from debug (M) without deassert
 
   output logic        ecall_insn_o,            // environment call (syscall) instruction encountered
@@ -25,7 +23,6 @@ module cv32e40p_decoder import cv32e40p_pkg::*;
 
   // from IF/ID pipeline
   input  logic [31:0] instr_rdata_i,           // instruction read from instr memory/cache
-  input  logic        illegal_c_insn_i,        // compressed instruction decode failed
 
   // ALU signals
   output logic        alu_en_o,                // ALU enable
@@ -47,7 +44,6 @@ module cv32e40p_decoder import cv32e40p_pkg::*;
   output logic        csr_access_o,            // access to CSR
   output logic        csr_status_o,            // access to xstatus CSR
   output csr_opcode_e csr_op_o,                // operation to perform on CSR
-  input  PrivLvl_t    current_priv_lvl_i,      // The current privilege level
 
   // LD/ST unit signals
   output logic        data_req_o,              // start transaction to data memory
@@ -108,7 +104,6 @@ module cv32e40p_decoder import cv32e40p_pkg::*;
     csr_illegal                 = 1'b0;
     csr_op                      = CSR_OP_READ;
     mret_insn_o                 = 1'b0;
-    uret_insn_o                 = 1'b0;
 
     dret_insn_o                 = 1'b0;
 
@@ -130,7 +125,6 @@ module cv32e40p_decoder import cv32e40p_pkg::*;
     regc_used_o                 = 1'b0;
 
     mret_dec_o                  = 1'b0;
-    uret_dec_o                  = 1'b0;
     dret_dec_o                  = 1'b0;
 
     unique case (instr_rdata_i[6:0])
@@ -435,13 +429,6 @@ module cv32e40p_decoder import cv32e40p_pkg::*;
                 mret_dec_o     = 1'b1;
               end
 
-              12'h002:  // uret
-              begin
-                illegal_insn_o = 1'b1;
-                uret_insn_o    = ~illegal_insn_o;
-                uret_dec_o     = 1'b1;
-              end
-
               12'h7b2:  // dret
               begin
                 illegal_insn_o = !debug_mode_i;
@@ -495,11 +482,6 @@ module cv32e40p_decoder import cv32e40p_pkg::*;
             2'b11:   csr_op   = instr_rdata_i[19:15] == 5'b0 ? CSR_OP_READ : CSR_OP_CLEAR;
             default: csr_illegal = 1'b1;
           endcase
-
-          if (instr_rdata_i[29:28] > current_priv_lvl_i) begin
-            // No access to higher privilege CSR
-            csr_illegal = 1'b1;
-          end
 
           // Determine if CSR access is illegal
           case (instr_rdata_i[31:20])

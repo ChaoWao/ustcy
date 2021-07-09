@@ -23,7 +23,6 @@ module cv32e40p_cs_registers import cv32e40p_pkg::*;
     output logic            m_irq_enable_o,
     
     output logic [31:0]     mepc_o,
-    output logic [31:0]     mcounteren_o,
     
     // debug
     input  logic            debug_mode_i,
@@ -34,9 +33,7 @@ module cv32e40p_cs_registers import cv32e40p_pkg::*;
     output logic            debug_ebreakm_o,
     output logic            debug_ebreaku_o,
     output logic            trigger_match_o,
-    
-    output PrivLvl_t        priv_lvl_o,
-    
+        
     input  logic [31:0]     pc_if_i,
     input  logic [31:0]     pc_id_i,
     input  logic [31:0]     pc_ex_i,
@@ -46,7 +43,6 @@ module cv32e40p_cs_registers import cv32e40p_pkg::*;
     input  logic            csr_save_ex_i,
     
     input  logic            csr_restore_mret_i,
-    input  logic            csr_restore_uret_i,
     
     input  logic            csr_restore_dret_i,
     //coming from controller
@@ -389,8 +385,6 @@ assign depc_o          = depc_q;
 assign debug_single_step_o  = dcsr_q.step;
 assign debug_ebreakm_o      = dcsr_q.ebreakm;
 assign debug_ebreaku_o      = dcsr_q.ebreaku;
-
-assign priv_lvl_o   = PRIV_LVL_M;
 
 // actual registers
 always_ff @(posedge clk, negedge rst_n) begin
