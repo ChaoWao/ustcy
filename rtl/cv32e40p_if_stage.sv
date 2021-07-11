@@ -26,6 +26,7 @@ module cv32e40p_if_stage
     // Output of IF Pipeline stage
     output logic              instr_valid_id_o,      // instruction in IF/ID pipeline is valid
     output logic       [31:0] instr_rdata_id_o,      // read instruction is sampled and sent to ID stage for decoding
+    
     output logic       [31:0] pc_if_o,
     output logic       [31:0] pc_id_o,
     
@@ -42,24 +43,24 @@ module cv32e40p_if_stage
 
 import cv32e40p_pkg::*;
 
-logic              if_valid, if_ready;
-
-// pc selection signals
+// PC selection signals
 logic       [31:0] branch_addr;
 logic       [31:0] exc_pc;
 
 // exception PC selection mux
 always_comb begin
     unique case (exc_pc_mux_i)
-        EXC_PC_EXCEPTION: exc_pc = { m_trap_base_addr_i, 8'h0 }; // 1.10 all the exceptions go to base address
-        EXC_PC_IRQ: exc_pc = { m_trap_base_addr_i, 1'b0, m_exc_vec_pc_mux_i, 2'b0 }; // interrupts are vectored
+        // 1.10 all the exceptions go to base address
+        EXC_PC_EXCEPTION: exc_pc = {m_trap_base_addr_i, 8'h0};
+        // interrupts are vectored
+        EXC_PC_IRQ: exc_pc = { m_trap_base_addr_i, 1'b0, m_exc_vec_pc_mux_i, 2'b0 };
         EXC_PC_DBD: exc_pc = { dm_halt_addr_i[31:2], 2'b0 };
         EXC_PC_DBE: exc_pc = { dm_exception_addr_i[31:2], 2'b0 };
         default: exc_pc = { m_trap_base_addr_i, 8'h0 };
     endcase
 end
 
-// pc selection
+// PC selection
 always_comb begin
     // Default assign PC_BOOT (should be overwritten in below case)
     branch_addr = {boot_addr_i[31:2], 2'b0};
@@ -70,6 +71,7 @@ always_comb begin
         PC_EXCEPTION: branch_addr = exc_pc;
         PC_MRET: branch_addr = mepc_i;
         PC_DRET: branch_addr = depc_i;
+        PC_FENCEI: branch_addr_n = pc_id_o + 4;
         default:;
     endcase
 end
@@ -98,7 +100,7 @@ always_ff @(posedge clk, negedge rst_n) begin
         instr_valid_id_o      <= 1'b0;
         pc_id_o               <= '0;
     end else begin
-        if (if_valid) begin
+        if ((~halt_if_i) & id_ready_i) begin
             instr_valid_id_o    <= 1'b1;
             pc_id_o             <= pc_if_o;
         end else if (clear_instr_valid_i) begin
@@ -106,8 +108,5 @@ always_ff @(posedge clk, negedge rst_n) begin
         end
     end
 end
-
-assign if_ready = id_ready_i;
-assign if_valid = (~halt_if_i) & if_ready;
 
 endmodule

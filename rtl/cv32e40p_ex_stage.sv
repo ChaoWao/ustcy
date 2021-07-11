@@ -39,12 +39,8 @@ module cv32e40p_ex_stage import cv32e40p_pkg::*;
     output logic [31:0] jump_target_o,
     output logic        branch_decision_o,
     
-    // Stall Control
-    input logic         lsu_ready_ex_i, // EX part of LSU is done
-    
-    output logic        ex_ready_o, // EX stage ready for new data
-    output logic        ex_valid_o, // EX stage gets new data
-    input  logic        wb_ready_i  // WB stage ready for new data
+    // Stall Control    
+    output logic        ex_valid_o // EX stage gets new data
 );
 
 logic [31:0]    alu_result;
@@ -116,10 +112,6 @@ cv32e40p_alu alu_i
     end
   end
 
-  // As valid always goes to the right and ready to the left, and we are able
-  // to finish branches without going to the WB stage, ex_valid does not
-  // depend on ex_ready.
-  assign ex_ready_o = (lsu_ready_ex_i & wb_ready_i) | (branch_in_ex_i);
-  assign ex_valid_o = (csr_access_i | lsu_en_i) & (lsu_ready_ex_i & wb_ready_i);
+  assign ex_valid_o = (csr_access_i | lsu_en_i);
 
 endmodule

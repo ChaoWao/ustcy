@@ -2,10 +2,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 (
   input  logic        clk,                        // Gated clock
   input  logic        rst_n,
-
-  output logic        ctrl_busy_o,                // Core is busy processing instructions
-  output logic        is_decoding_o,              // Core is in decoding state
-  
+ 
   // decoder related signals
   output logic        deassert_we_o,              // deassert write enable for next instruction
 
@@ -30,7 +27,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
   output logic        pc_set_o,                   // jump to address set by pc_mux
   output logic [3:0]  pc_mux_o,                   // Selector in the Fetch stage to select the rigth PC (normal, jump ...)
   output logic [2:0]  exc_pc_mux_o,               // Selects target PC for exception
-  output logic [1:0]  trap_addr_mux_o,            // Selects trap address base
 
   // LSU
   input  logic        data_req_ex_i,              // data memory access is currently performed in EX stage
@@ -114,10 +110,11 @@ module cv32e40p_controller import cv32e40p_pkg::*;
   input  logic        id_ready_i,                 // ID stage is ready
   input  logic        id_valid_i,                 // ID stage is valid
 
-  input  logic        ex_valid_i,                 // EX stage is done
+  input  logic        ex_valid_i                 // EX stage is done
 
-  input  logic        wb_ready_i                  // WB stage is ready
 );
+
+  logic        is_decoding;
 
   // FSM state encoding
   ctrl_state_e ctrl_fsm_cs, ctrl_fsm_ns;
@@ -164,7 +161,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
     exc_cause_o            = '0;
     exc_pc_mux_o           = EXC_PC_IRQ;
-    trap_addr_mux_o        = TRAP_MACHINE;
 
     csr_cause_o            = '0;
 
@@ -178,7 +174,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
     halt_if_o              = 1'b0;
     halt_id_o              = 1'b0;
-    is_decoding_o          = 1'b0;
+    is_decoding          = 1'b0;
     irq_ack_o              = 1'b0;
     irq_id_o               = 5'b0;
 
@@ -209,14 +205,14 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       // We were just reset, wait for fetch_enable
       RESET:
       begin
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
           ctrl_fsm_ns = BOOT_SET;
       end
 
       // copy boot address to instr fetch address
       BOOT_SET:
       begin
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
         pc_mux_o      = PC_BOOT;
         pc_set_o      = 1'b1;
         if (debug_req_pending) begin
@@ -229,7 +225,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
       WAIT_SLEEP:
       begin
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
         ctrl_busy_o   = 1'b0;
         halt_if_o     = 1'b1;
         halt_id_o     = 1'b1;
@@ -241,7 +237,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       begin
         // we begin execution when an
         // interrupt has arrived
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
         halt_if_o     = 1'b1;
         halt_id_o     = 1'b1;
 
@@ -254,7 +250,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
       FIRST_FETCH:
       begin
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
 
         // ID stage is always ready
         ctrl_fsm_ns = DECODE;
@@ -278,7 +274,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
           irq_ack_o         = 1'b1;
           irq_id_o          = irq_id_ctrl_i;
 
-          trap_addr_mux_o  = TRAP_MACHINE;
             
           csr_save_cause_o  = 1'b1;
           csr_cause_o       = {1'b1,irq_id_ctrl_i};
@@ -293,7 +288,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
           begin //taken branch
             // there is a branch in the EX stage that is taken
 
-            is_decoding_o = 1'b0;
+            is_decoding = 1'b0;
 
             pc_mux_o      = PC_BRANCH;
             pc_set_o      = 1'b1;
@@ -310,7 +305,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
           else if (instr_valid_i) //valid block
           begin: blk_decode_level1 // now analyze the current instruction in the ID stage
 
-            is_decoding_o = 1'b1;
+            is_decoding = 1'b1;
             illegal_insn_n = 1'b0;
 
             if ( (debug_req_pending || trigger_match_i) & ~debug_mode_q )
@@ -325,7 +320,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
               begin
                 // Taken IRQ
 
-                is_decoding_o     = 1'b0;
+                is_decoding     = 1'b0;
                 halt_if_o         = 1'b1;
                 halt_id_o         = 1'b1;
 
@@ -338,7 +333,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
                 irq_ack_o         = 1'b1;
                 irq_id_o          = irq_id_ctrl_i;
 
-                  trap_addr_mux_o  = TRAP_MACHINE;
                   
                 csr_save_cause_o  = 1'b1;
                 csr_cause_o       = {1'b1,irq_id_ctrl_i};
@@ -471,14 +465,14 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
           end  //valid block
           else begin
-            is_decoding_o         = 1'b0;
+            is_decoding         = 1'b0;
           end
       end
 
       // flush the pipeline, insert NOP into EX stage
       FLUSH_EX:
       begin
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
 
         halt_if_o = 1'b1;
         halt_id_o = 1'b1;
@@ -513,7 +507,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       // flush the pipeline, insert NOP into EX and WB stage
       FLUSH_WB:
       begin
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
 
         halt_if_o = 1'b1;
         halt_id_o = 1'b1;
@@ -525,7 +519,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
               //exceptions
               pc_mux_o              = PC_EXCEPTION;
               pc_set_o              = 1'b1;
-              trap_addr_mux_o       = TRAP_MACHINE;
               exc_pc_mux_o          = debug_mode_q ? EXC_PC_DBE : EXC_PC_EXCEPTION;
               illegal_insn_n        = 1'b0;
               if (debug_single_step_i && ~debug_mode_q)
@@ -536,7 +529,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
                   //ebreak
                   pc_mux_o              = PC_EXCEPTION;
                   pc_set_o              = 1'b1;
-                  trap_addr_mux_o       = TRAP_MACHINE;
                   exc_pc_mux_o          = EXC_PC_EXCEPTION;
 
                   if (debug_single_step_i && ~debug_mode_q)
@@ -546,7 +538,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
                   //ecall
                   pc_mux_o              = PC_EXCEPTION;
                   pc_set_o              = 1'b1;
-                  trap_addr_mux_o       = TRAP_MACHINE;
                   exc_pc_mux_o          = debug_mode_q ? EXC_PC_DBE : EXC_PC_EXCEPTION;
 
                   if (debug_single_step_i && ~debug_mode_q)
@@ -588,7 +579,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
       XRET_JUMP:
       begin
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
         ctrl_fsm_ns   = DECODE;
         unique case(1'b1)
           mret_dec_i: begin
@@ -616,7 +607,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       // determine branch target address (for saving into dpc) before proceeding
       DBG_WAIT_BRANCH:
       begin
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
         halt_if_o = 1'b1;
 
         if (branch_taken_ex_i) begin
@@ -639,7 +630,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       // not to the next instruction's (which is why we save the pc in id).
       DBG_TAKEN_ID:
       begin
-        is_decoding_o     = 1'b0;
+        is_decoding     = 1'b0;
         pc_set_o          = 1'b1;
         pc_mux_o          = PC_EXCEPTION;
         exc_pc_mux_o      = EXC_PC_DBD;
@@ -666,7 +657,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       // DPC is set the next instruction to be executed/fetched
       DBG_TAKEN_IF:
       begin
-        is_decoding_o     = 1'b0;
+        is_decoding     = 1'b0;
         pc_set_o          = 1'b1;
         pc_mux_o          = PC_EXCEPTION;
         exc_pc_mux_o      = EXC_PC_DBD;
@@ -685,7 +676,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
       DBG_FLUSH:
       begin
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
 
         halt_if_o   = 1'b1;
         halt_id_o   = 1'b1;
@@ -705,7 +696,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       // Debug end
 
       default: begin
-        is_decoding_o = 1'b0;
+        is_decoding = 1'b0;
         ctrl_fsm_ns = RESET;
       end
     endcase
@@ -728,7 +719,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
     deassert_we_o  = 1'b0;
 
     // deassert WE when the core is not decoding instructions
-    if (~is_decoding_o)
+    if (~is_decoding)
       deassert_we_o = 1'b1;
 
     // deassert WE in case of illegal instruction
@@ -737,11 +728,9 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
     // Stall because of load operation
     if (
-          ( (data_req_ex_i == 1'b1) && (regfile_we_ex_i == 1'b1) ||
-           (wb_ready_i == 1'b0) && (regfile_we_wb_i == 1'b1)
-          ) &&
+          ( (data_req_ex_i == 1'b1) && (regfile_we_ex_i == 1'b1) ) &&
           ( (reg_d_ex_is_reg_a_i == 1'b1) || (reg_d_ex_is_reg_b_i == 1'b1) || (reg_d_ex_is_reg_c_i == 1'b1) ||
-            (is_decoding_o && (regfile_we_id_i && !data_misaligned_i) && (regfile_waddr_ex_i == regfile_alu_waddr_id_i)) )
+            (is_decoding && (regfile_we_id_i && !data_misaligned_i) && (regfile_waddr_ex_i == regfile_alu_waddr_id_i)) )
        )
     begin
       deassert_we_o   = 1'b1;

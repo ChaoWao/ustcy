@@ -121,24 +121,6 @@ typedef enum logic[11:0] {
   CSR_UCAUSE         = 12'h042,         // Not included (PULP_SECURE = 0)
 
   ///////////////////////////////////////////////////////
-  // User Custom CSRs
-  ///////////////////////////////////////////////////////
-
-  // Hardware Loop
-  CSR_LPSTART0       = 12'h800,         // Custom CSR. Included if PULP_HWLP = 1
-  CSR_LPEND0         = 12'h801,         // Custom CSR. Included if PULP_HWLP = 1
-  CSR_LPCOUNT0       = 12'h802,         // Custom CSR. Included if PULP_HWLP = 1
-  CSR_LPSTART1       = 12'h804,         // Custom CSR. Included if PULP_HWLP = 1
-  CSR_LPEND1         = 12'h805,         // Custom CSR. Included if PULP_HWLP = 1
-  CSR_LPCOUNT1       = 12'h806,         // Custom CSR. Included if PULP_HWLP = 1
-
-  // User Hart ID
-  CSR_UHARTID        = 12'hCC0,         // Custom CSR. User Hart ID
-
-  // Privilege
-  CSR_PRIVLV         = 12'hCC1,         // Custom CSR. Privilege Level
-
-  ///////////////////////////////////////////////////////
   // Machine CSRs
   ///////////////////////////////////////////////////////
 
@@ -485,9 +467,7 @@ parameter PC_BRANCH        = 4'b0011;
 parameter PC_EXCEPTION     = 4'b0100;
 parameter PC_FENCEI        = 4'b0001;
 parameter PC_MRET          = 4'b0101;
-parameter PC_URET          = 4'b0110;
 parameter PC_DRET          = 4'b0111;
-parameter PC_HWLOOP        = 4'b1000;
 
 // Exception PC mux selector defines
 parameter EXC_PC_EXCEPTION = 3'b000;
@@ -497,20 +477,12 @@ parameter EXC_PC_DBD       = 3'b010;
 parameter EXC_PC_DBE       = 3'b011;
 
 // Exception Cause
-parameter EXC_CAUSE_INSTR_FAULT  = 5'h01;
 parameter EXC_CAUSE_ILLEGAL_INSN = 5'h02;
 parameter EXC_CAUSE_BREAKPOINT   = 5'h03;
-parameter EXC_CAUSE_LOAD_FAULT   = 5'h05;
-parameter EXC_CAUSE_STORE_FAULT  = 5'h07;
-parameter EXC_CAUSE_ECALL_UMODE  = 5'h08;
 parameter EXC_CAUSE_ECALL_MMODE  = 5'h0B;
 
 // Interrupt mask
 parameter IRQ_MASK = 32'hFFFF0888;
-
-// Trap mux selector
-parameter TRAP_MACHINE      = 2'b00;
-parameter TRAP_USER         = 2'b01;
 
 // Debug Cause
 parameter DBG_CAUSE_NONE       = 3'h0;
