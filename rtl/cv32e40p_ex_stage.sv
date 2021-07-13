@@ -4,34 +4,35 @@ module cv32e40p_ex_stage import cv32e40p_pkg::*;
     input  logic        rst_n,
     
     // ALU signals from ID stage
-    input  alu_opcode_e alu_operator_i,
-    input  logic [31:0] alu_operand_a_i,
-    input  logic [31:0] alu_operand_b_i,
-    input  logic [31:0] alu_operand_c_i,
+    input alu_opcode_e alu_operator_i,
+    input logic [31:0] alu_operand_a_i,
+    input logic [31:0] alu_operand_b_i,
+    input logic [31:0] alu_operand_c_i,
+    input logic alu_en_i,
     
-    input  logic        lsu_en_i,
-    input  logic [31:0] lsu_rdata_i,
+    input logic lsu_en_i,
+    input logic [31:0] lsu_rdata_i,
     
     // input from ID stage
-    input  logic        branch_in_ex_i,
-    input  logic [5:0]  regfile_alu_waddr_i,
-    input  logic        regfile_alu_we_i,
+    input logic branch_in_ex_i,
+    input logic [4:0]  regfile_alu_waddr_i,
+    input logic regfile_alu_we_i,
     
     // directly passed through to WB stage, not used in EX
     input  logic        regfile_we_i,
-    input  logic [5:0]  regfile_waddr_i,
+    input  logic [4:0]  regfile_waddr_i,
     
     // CSR access
     input  logic        csr_access_i,
     input  logic [31:0] csr_rdata_i,
     
     // Output of EX stage pipeline
-    output logic [5:0]  regfile_waddr_wb_o,
+    output logic [4:0]  regfile_waddr_wb_o,
     output logic        regfile_we_wb_o,
     output logic [31:0] regfile_wdata_wb_o,
     
     // Forwarding ports : to ID stage
-    output logic  [5:0] regfile_alu_waddr_fw_o,
+    output logic  [4:0] regfile_alu_waddr_fw_o,
     output logic        regfile_alu_we_fw_o,
     output logic [31:0] regfile_alu_wdata_fw_o,    // forward to RF and ID/EX pipe, ALU & MUL
     
@@ -47,12 +48,12 @@ logic [31:0]    alu_result;
 logic           alu_cmp_result;
 
 logic           regfile_we_lsu;
-logic [5:0]     regfile_waddr_lsu;
+logic [4:0]     regfile_waddr_lsu;
 
 // ALU write port mux
 assign regfile_alu_we_fw_o = regfile_alu_we_i;
 assign regfile_alu_waddr_fw_o = regfile_alu_waddr_i;
-assign regfile_alu_wdata_fw_o = csr_access_i ? csr_rdata_i : alu_result;
+assign regfile_alu_wdata_fw_o = csr_access_i ? csr_rdata_i : (alu_en_i ? alu_result : '0);
 
 // LSU write port mux
 assign regfile_we_wb_o = regfile_we_lsu;
@@ -104,14 +105,12 @@ cv32e40p_alu alu_i
         if (regfile_we_i) begin
           regfile_waddr_lsu <= regfile_waddr_i;
         end
-      end else if (wb_ready_i) begin
-        // we are ready for a new instruction, but there is none available,
-        // so we just flush the current one out of the pipe
+      end else begin
         regfile_we_lsu    <= 1'b0;
       end
     end
   end
 
-  assign ex_valid_o = (csr_access_i | lsu_en_i);
+assign ex_valid_o = (alu_en_i | csr_access_i | lsu_en_i);
 
 endmodule

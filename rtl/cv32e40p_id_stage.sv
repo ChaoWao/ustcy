@@ -37,6 +37,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*;
     output logic [31:0] alu_operand_a_ex_o,
     output logic [31:0] alu_operand_b_ex_o,
     output logic [31:0] alu_operand_c_ex_o,
+    output logic alu_en_ex_o,
 
     output logic [5:0]  regfile_waddr_ex_o,
     output logic        regfile_we_ex_o,
@@ -718,6 +719,7 @@ cv32e40p_int_controller int_controller_i
   begin : ID_EX_PIPE_REGISTERS
     if (rst_n == 1'b0)
     begin
+        alu_en_ex_o <= '0;
       alu_operator_ex_o           <= ALU_SLTU;
       alu_operand_a_ex_o          <= '0;
       alu_operand_b_ex_o          <= '0;
@@ -738,7 +740,6 @@ cv32e40p_int_controller int_controller_i
       data_sign_ext_ex_o          <= 2'b0;
       data_reg_offset_ex_o        <= 2'b0;
       data_req_ex_o               <= 1'b0;
-      atop_ex_o                   <= 5'b0;
 
       data_misaligned_ex_o        <= 1'b0;
 
@@ -767,24 +768,63 @@ cv32e40p_int_controller int_controller_i
     end else begin
         // EX stage is ready but we don't have a new instruction for it,
         // so we set all write enables to 0, but unstall the pipe
+        if (id_valid_o) begin // unstall the whole pipeline
+            alu_en_ex_o                 <= alu_en;
+            if (alu_en)
+            begin
+              alu_operator_ex_o         <= alu_operator;
+              alu_operand_a_ex_o        <= alu_operand_a;
+              alu_operand_b_ex_o        <= alu_operand_b;
+              alu_operand_c_ex_o        <= alu_operand_c;
+            end
+            regfile_we_ex_o             <= regfile_we_id;
+            if (regfile_we_id) begin
+              regfile_waddr_ex_o        <= regfile_waddr_id;
+            end
+    
+            regfile_alu_we_ex_o         <= regfile_alu_we_id;
+            if (regfile_alu_we_id) begin
+              regfile_alu_waddr_ex_o    <= regfile_alu_waddr_id;
+            end
+            csr_access_ex_o             <= csr_access;
+            csr_op_ex_o                 <= csr_op;
+    
+            data_req_ex_o               <= data_req_id;
+            if (data_req_id)
+            begin // only needed for LSU when there is an active request
+              data_we_ex_o              <= data_we_id;
+              data_type_ex_o            <= data_type_id;
+              data_sign_ext_ex_o        <= data_sign_ext_id;
+              data_reg_offset_ex_o      <= data_reg_offset_id;
+            end
+    
+            data_misaligned_ex_o        <= 1'b0;
+    
+            if ((ctrl_transfer_insn_in_id == BRANCH_COND) || data_req_id) begin
+              pc_ex_o                   <= pc_id_i;
+            end
+    
+            branch_in_ex_o              <= ctrl_transfer_insn_in_id == BRANCH_COND;
+            prepost_useincr_ex_o        <= prepost_useincr;
 
-        regfile_we_ex_o             <= 1'b0;
-
-        regfile_alu_we_ex_o         <= 1'b0;
-
-        csr_op_ex_o                 <= CSR_OP_READ;
-
-        data_req_ex_o               <= 1'b0;
-
-
-        data_misaligned_ex_o        <= 1'b0;
-
-        branch_in_ex_o              <= 1'b0;
-
-        alu_operator_ex_o           <= ALU_SLTU;
-
+        end else begin
+            regfile_we_ex_o             <= 1'b0;
+    
+            regfile_alu_we_ex_o         <= 1'b0;
+    
+            csr_op_ex_o                 <= CSR_OP_READ;
+    
+            data_req_ex_o               <= 1'b0;
+    
+    
+            data_misaligned_ex_o        <= 1'b0;
+    
+            branch_in_ex_o              <= 1'b0;
+    
+            alu_operator_ex_o           <= ALU_SLTU;
+            alu_en_ex_o                 <= 1'b1;
+        end
       end 
-    end
   end
 
   
