@@ -14,15 +14,15 @@
 //              Jeremy Bennett <jeremy.bennett@embecosm.com>
 
 module tb_top #(
-    parameter INSTR_RDATA_WIDTH = 32,
-    parameter RAM_ADDR_WIDTH = 22,
-    parameter BOOT_ADDR = 'h180,
-    parameter PULP_XPULP = 0,
-    parameter PULP_CLUSTER = 0,
-    parameter FPU = 0,
-    parameter PULP_ZFINX = 0,
-    parameter NUM_MHPMCOUNTERS = 1,
-    parameter DM_HALTADDRESS = 32'h1A110800
+  parameter INSTR_RDATA_WIDTH = 32,
+  parameter RAM_ADDR_WIDTH = 22,
+  parameter BOOT_ADDR = 'h180,
+  parameter PULP_XPULP = 0,
+  parameter PULP_CLUSTER = 0,
+  parameter FPU = 0,
+  parameter PULP_ZFINX = 0,
+  parameter NUM_MHPMCOUNTERS = 1,
+  parameter DM_HALTADDRESS = 32'h1A110800
 );
 
   // comment to record execution trace
@@ -66,32 +66,32 @@ module tb_top #(
 
   // we either load the provided firmware or execute a small test program that
   // doesn't do more than an infinite loop with some I/O
-  initial begin : load_prog
+  initial begin
     automatic string firmware;
     automatic int prog_size = 6;
 
     $readmemh("/home/wcwxy/workspace/cv32e40p-vsim/example_tb/core/custom/hello_world.hex", wrapper_i.ram_i.dp_ram_i.mem);
-//    if ($value$plusargs("firmware=%s", firmware)) begin
-//      if ($test$plusargs("verbose"))
-//        $display("[TESTBENCH] %t: loading firmware %0s ...", $time, firmware);
-//      $readmemh(firmware, wrapper_i.ram_i.dp_ram_i.mem);
+  // if ($value$plusargs("firmware=%s", firmware)) begin
+  //   if ($test$plusargs("verbose"))
+  //     $display("[TESTBENCH] %t: loading firmware %0s ...", $time, firmware);
+  //   $readmemh(firmware, wrapper_i.ram_i.dp_ram_i.mem);
 
-//    end else begin
-//      $display("No firmware specified");
-//      $finish;
-//    end
+  // end else begin
+  //   $display("No firmware specified");
+  //   $finish;
+  // end
   end
 
   // clock generation
-  initial begin : clock_gen
+  initial begin
     forever begin
       #CLK_PHASE_HI clk = 1'b0;
       #CLK_PHASE_LO clk = 1'b1;
     end
-  end : clock_gen
+  end
 
   // reset generation
-  initial begin : reset_gen
+  initial begin
     rst_n = 1'b0;
 
     // wait a few cycles
@@ -103,12 +103,12 @@ module tb_top #(
     #RESET_DEL rst_n = 1'b1;
     if ($test$plusargs("verbose")) $display("reset deasserted", $time);
 
-  end : reset_gen
+  end
 
   // set timing format
-  initial begin : timing_format
+  initial begin
     $timeformat(-9, 0, "ns", 9);
-  end : timing_format
+  end
 
   // abort after n cycles, if we want to
   always_ff @(posedge clk, negedge rst_n) begin
@@ -144,23 +144,23 @@ module tb_top #(
 
   // wrapper for riscv, the memory system and stdout peripheral
   cv32e40p_tb_subsystem #(
-      .INSTR_RDATA_WIDTH(INSTR_RDATA_WIDTH),
-      .RAM_ADDR_WIDTH   (RAM_ADDR_WIDTH),
-      .BOOT_ADDR        (BOOT_ADDR),
-      .PULP_XPULP       (PULP_XPULP),
-      .PULP_CLUSTER     (PULP_CLUSTER),
-      .FPU              (FPU),
-      .PULP_ZFINX       (PULP_ZFINX),
-      .NUM_MHPMCOUNTERS (NUM_MHPMCOUNTERS),
-      .DM_HALTADDRESS   (DM_HALTADDRESS)
+    .INSTR_RDATA_WIDTH(INSTR_RDATA_WIDTH),
+    .RAM_ADDR_WIDTH   (RAM_ADDR_WIDTH),
+    .BOOT_ADDR        (BOOT_ADDR),
+    .PULP_XPULP       (PULP_XPULP),
+    .PULP_CLUSTER     (PULP_CLUSTER),
+    .FPU              (FPU),
+    .PULP_ZFINX       (PULP_ZFINX),
+    .NUM_MHPMCOUNTERS (NUM_MHPMCOUNTERS),
+    .DM_HALTADDRESS   (DM_HALTADDRESS)
   ) wrapper_i (
-      .clk_i         (clk),
-      .rst_ni        (rst_n),
-      .fetch_enable_i(fetch_enable),
-      .tests_passed_o(tests_passed),
-      .tests_failed_o(tests_failed),
-      .exit_valid_o  (exit_valid),
-      .exit_value_o  (exit_value)
+    .clk_i         (clk),
+    .rst_ni        (rst_n),
+    .fetch_enable_i(fetch_enable),
+    .tests_passed_o(tests_passed),
+    .tests_failed_o(tests_failed),
+    .exit_valid_o  (exit_valid),
+    .exit_value_o  (exit_value)
   );
 
 `ifndef VERILATOR

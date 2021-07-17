@@ -28,30 +28,29 @@
 
 
 module riscv_gnt_stall #(
-    parameter MAX_STALL_N    = 1,
-              RAM_ADDR_WIDTH = 32,
-              DATA_WIDTH     = 32
+  parameter MAX_STALL_N    = 1,
+            RAM_ADDR_WIDTH = 32,
+            DATA_WIDTH     = 32
 ) (
-    input logic clk_i,
-    input logic rst_ni,
+  input  logic        clk_i,
+  input  logic        rst_ni,
 
-    input  logic req_core_i,
-    output logic req_mem_o,
+  input  logic        req_core_i,
+  output logic        req_mem_o,
 
-    // grant to memory
-    output logic grant_core_o,
-    input  logic grant_mem_i,
+  // grant to memory
+  output logic        grant_core_o,
+  input  logic        grant_mem_i,
 
-    input logic        en_stall_i,
-    input logic [31:0] stall_mode_i,
-    input logic [31:0] max_stall_i,
-    input logic [31:0] gnt_stall_i
+  input  logic        en_stall_i,
+  input  logic [31:0] stall_mode_i,
+  input  logic [31:0] max_stall_i,
+  input  logic [31:0] gnt_stall_i
 );
 
   // -----------------------------------------------------------------------------------------------
   // Local variables
   // -----------------------------------------------------------------------------------------------
-
 
   import cv32e40p_pkg::*;
   import perturbation_pkg::*;
@@ -66,6 +65,7 @@ module riscv_gnt_stall #(
   // -----------------------------------------------------------------------------------------------
   // Tasks and functions
   // -----------------------------------------------------------------------------------------------
+
   task set_delay_value();
 `ifndef VERILATOR
     if (!en_stall_i) delay_value = 0;
@@ -103,12 +103,10 @@ module riscv_gnt_stall #(
 `else
       #(100ps);
 `endif
-
       // When request is removed, remove grant
       if (!req_core_i) begin
         grant_core_o <= $urandom;
       end
-
     // New request coming in
     else
       if (grant_core_o_q || !req_core_i_q) begin
