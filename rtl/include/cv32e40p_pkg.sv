@@ -1,28 +1,3 @@
-// Copyright 2018 ETH Zurich and University of Bologna.
-// Copyright and related rights are licensed under the Solderpad Hardware
-// License, Version 0.51 (the "License"); you may not use this file except in
-// compliance with the License.  You may obtain a copy of the License at
-// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
-// or agreed to in writing, software, hardware and materials distributed under
-// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-// CONDITIONS OF ANY KIND, either express or implied. See the License for the
-// specific language governing permissions and limitations under the License.
-
-////////////////////////////////////////////////////////////////////////////////
-// Engineer:       Matthias Baer - baermatt@student.ethz.ch                   //
-//                                                                            //
-// Additional contributions by:                                               //
-//                 Sven Stucki - svstucki@student.ethz.ch                     //
-//                                                                            //
-//                                                                            //
-// Design Name:    RISC-V processor core                                      //
-// Project Name:   RI5CY                                                      //
-// Language:       SystemVerilog                                              //
-//                                                                            //
-// Description:    Defines for various constants used by the processor core.  //
-//                                                                            //
-////////////////////////////////////////////////////////////////////////////////
-
 package cv32e40p_pkg;
 
 ////////////////////////////////////////////////
@@ -45,25 +20,10 @@ parameter OPCODE_JALR      = 7'h67;
 parameter OPCODE_JAL       = 7'h6f;
 parameter OPCODE_AUIPC     = 7'h17;
 parameter OPCODE_LUI       = 7'h37;
-parameter OPCODE_OP_FP     = 7'h53;
-parameter OPCODE_OP_FMADD  = 7'h43;
-parameter OPCODE_OP_FNMADD = 7'h4f;
-parameter OPCODE_OP_FMSUB  = 7'h47;
-parameter OPCODE_OP_FNMSUB = 7'h4b;
-parameter OPCODE_STORE_FP  = 7'h27;
-parameter OPCODE_LOAD_FP   = 7'h07;
-parameter OPCODE_AMO       = 7'h2F;
 
 // those opcodes are now used for PULP custom instructions
 // parameter OPCODE_CUST0     = 7'h0b
 // parameter OPCODE_CUST1     = 7'h2b
-
-// PULP custom
-parameter OPCODE_LOAD_POST  = 7'h0b;
-parameter OPCODE_STORE_POST = 7'h2b;
-parameter OPCODE_PULP_OP    = 7'h5b;
-parameter OPCODE_VECOP      = 7'h57;
-parameter OPCODE_HWLOOP     = 7'h7b;
 
 parameter REGC_S1   = 2'b10;
 parameter REGC_S4   = 2'b00;
@@ -87,12 +47,6 @@ typedef enum logic [ALU_OP_WIDTH-1:0]
 
  ALU_ADD   = 7'b0011000,
  ALU_SUB   = 7'b0011001,
- ALU_ADDU  = 7'b0011010,
- ALU_SUBU  = 7'b0011011,
- ALU_ADDR  = 7'b0011100,
- ALU_SUBR  = 7'b0011101,
- ALU_ADDUR = 7'b0011110,
- ALU_SUBUR = 7'b0011111,
 
  ALU_XOR   = 7'b0101111,
  ALU_OR    = 7'b0101110,
@@ -101,34 +55,11 @@ typedef enum logic [ALU_OP_WIDTH-1:0]
 // Shifts
  ALU_SRA   = 7'b0100100,
  ALU_SRL   = 7'b0100101,
- ALU_ROR   = 7'b0100110,
  ALU_SLL   = 7'b0100111,
-
-// bit manipulation
- ALU_BEXT  = 7'b0101000,
- ALU_BEXTU = 7'b0101001,
- ALU_BINS  = 7'b0101010,
- ALU_BCLR  = 7'b0101011,
- ALU_BSET  = 7'b0101100,
- ALU_BREV  = 7'b1001001,
-
-// Bit counting
- ALU_FF1   = 7'b0110110,
- ALU_FL1   = 7'b0110111,
- ALU_CNT   = 7'b0110100,
- ALU_CLB   = 7'b0110101,
-
-// Sign-/zero-extensions
- ALU_EXTS  = 7'b0111110,
- ALU_EXT   = 7'b0111111,
 
 // Comparisons
  ALU_LTS   = 7'b0000000,
  ALU_LTU   = 7'b0000001,
- ALU_LES   = 7'b0000100,
- ALU_LEU   = 7'b0000101,
- ALU_GTS   = 7'b0001000,
- ALU_GTU   = 7'b0001001,
  ALU_GES   = 7'b0001010,
  ALU_GEU   = 7'b0001011,
  ALU_EQ    = 7'b0001100,
@@ -136,56 +67,9 @@ typedef enum logic [ALU_OP_WIDTH-1:0]
 
 // Set Lower Than operations
  ALU_SLTS  = 7'b0000010,
- ALU_SLTU  = 7'b0000011,
- ALU_SLETS = 7'b0000110,
- ALU_SLETU = 7'b0000111,
-
-// Absolute value
- ALU_ABS   = 7'b0010100,
- ALU_CLIP  = 7'b0010110,
- ALU_CLIPU = 7'b0010111,
-
-// Insert/extract
- ALU_INS   = 7'b0101101,
-
-// min/max
- ALU_MIN   = 7'b0010000,
- ALU_MINU  = 7'b0010001,
- ALU_MAX   = 7'b0010010,
- ALU_MAXU  = 7'b0010011,
-
-// div/rem
- ALU_DIVU  = 7'b0110000, // bit 0 is used for signed mode, bit 1 is used for remdiv
- ALU_DIV   = 7'b0110001, // bit 0 is used for signed mode, bit 1 is used for remdiv
- ALU_REMU  = 7'b0110010, // bit 0 is used for signed mode, bit 1 is used for remdiv
- ALU_REM   = 7'b0110011, // bit 0 is used for signed mode, bit 1 is used for remdiv
-
- ALU_SHUF  = 7'b0111010,
- ALU_SHUF2 = 7'b0111011,
- ALU_PCKLO = 7'b0111000,
- ALU_PCKHI = 7'b0111001
+ ALU_SLTU  = 7'b0000011
 
 } alu_opcode_e;
-
-parameter MUL_OP_WIDTH = 3;
-
-typedef enum logic [MUL_OP_WIDTH-1:0]
-{
-
- MUL_MAC32 = 3'b000,
- MUL_MSU32 = 3'b001,
- MUL_I     = 3'b010,
- MUL_IR    = 3'b011,
- MUL_DOT8  = 3'b100,
- MUL_DOT16 = 3'b101,
- MUL_H     = 3'b110
-
- } mul_opcode_e;
-
-// vector modes
-parameter VEC_MODE32 = 2'b00;
-parameter VEC_MODE16 = 2'b10;
-parameter VEC_MODE8  = 2'b11;
 
 
 // FSM state encoding
@@ -203,9 +87,6 @@ parameter HALTED_INDEX = 2;
 
 typedef enum logic [2:0] { HAVERESET = 3'b001, RUNNING = 3'b010, HALTED = 3'b100 } debug_state_e;
 
-typedef enum logic {IDLE, BRANCH_WAIT} prefetch_state_e;
-
-typedef enum logic [2:0] {IDLE_MULT, STEP0, STEP1, STEP2, FINISH} mult_state_e;
 
 /////////////////////////////////////////////////////////
 //    ____ ____    ____            _     _             //
@@ -238,24 +119,6 @@ typedef enum logic[11:0] {
   // User trap handling
   CSR_UEPC           = 12'h041,         // Not included (PULP_SECURE = 0)
   CSR_UCAUSE         = 12'h042,         // Not included (PULP_SECURE = 0)
-
-  ///////////////////////////////////////////////////////
-  // User Custom CSRs
-  ///////////////////////////////////////////////////////
-
-  // Hardware Loop
-  CSR_LPSTART0       = 12'h800,         // Custom CSR. Included if PULP_HWLP = 1
-  CSR_LPEND0         = 12'h801,         // Custom CSR. Included if PULP_HWLP = 1
-  CSR_LPCOUNT0       = 12'h802,         // Custom CSR. Included if PULP_HWLP = 1
-  CSR_LPSTART1       = 12'h804,         // Custom CSR. Included if PULP_HWLP = 1
-  CSR_LPEND1         = 12'h805,         // Custom CSR. Included if PULP_HWLP = 1
-  CSR_LPCOUNT1       = 12'h806,         // Custom CSR. Included if PULP_HWLP = 1
-
-  // User Hart ID
-  CSR_UHARTID        = 12'hCC0,         // Custom CSR. User Hart ID
-
-  // Privilege
-  CSR_PRIVLV         = 12'hCC1,         // Custom CSR. Privilege Level
 
   ///////////////////////////////////////////////////////
   // Machine CSRs
@@ -572,25 +435,6 @@ parameter IMMB_SHUF   = 4'b1000;
 parameter IMMB_CLIP   = 4'b1001;
 parameter IMMB_BI     = 4'b1011;
 
-// bit mask selection
-parameter BMASK_A_ZERO = 1'b0;
-parameter BMASK_A_S3   = 1'b1;
-
-parameter BMASK_B_S2   = 2'b00;
-parameter BMASK_B_S3   = 2'b01;
-parameter BMASK_B_ZERO = 2'b10;
-parameter BMASK_B_ONE  = 2'b11;
-
-parameter BMASK_A_REG  = 1'b0;
-parameter BMASK_A_IMM  = 1'b1;
-parameter BMASK_B_REG  = 1'b0;
-parameter BMASK_B_IMM  = 1'b1;
-
-
-// multiplication immediates
-parameter MIMM_ZERO    = 1'b0;
-parameter MIMM_S3      = 1'b1;
-
 // operand c selection
 parameter OP_C_REGC_OR_FWD = 2'b00;
 parameter OP_C_REGB_OR_FWD = 2'b01;
@@ -606,19 +450,6 @@ parameter BRANCH_COND = 2'b11; // conditional branches
 parameter JT_JAL  = 2'b01;
 parameter JT_JALR = 2'b10;
 parameter JT_COND = 2'b11;
-
-// Atomic operations
-parameter AMO_LR   = 5'b00010;
-parameter AMO_SC   = 5'b00011;
-parameter AMO_SWAP = 5'b00001;
-parameter AMO_ADD  = 5'b00000;
-parameter AMO_XOR  = 5'b00100;
-parameter AMO_AND  = 5'b01100;
-parameter AMO_OR   = 5'b01000;
-parameter AMO_MIN  = 5'b10000;
-parameter AMO_MAX  = 5'b10100;
-parameter AMO_MINU = 5'b11000;
-parameter AMO_MAXU = 5'b11100;
 
 ///////////////////////////////////////////////
 //   ___ _____   ____  _                     //
@@ -636,9 +467,7 @@ parameter PC_BRANCH        = 4'b0011;
 parameter PC_EXCEPTION     = 4'b0100;
 parameter PC_FENCEI        = 4'b0001;
 parameter PC_MRET          = 4'b0101;
-parameter PC_URET          = 4'b0110;
 parameter PC_DRET          = 4'b0111;
-parameter PC_HWLOOP        = 4'b1000;
 
 // Exception PC mux selector defines
 parameter EXC_PC_EXCEPTION = 3'b000;
@@ -648,20 +477,12 @@ parameter EXC_PC_DBD       = 3'b010;
 parameter EXC_PC_DBE       = 3'b011;
 
 // Exception Cause
-parameter EXC_CAUSE_INSTR_FAULT  = 5'h01;
 parameter EXC_CAUSE_ILLEGAL_INSN = 5'h02;
 parameter EXC_CAUSE_BREAKPOINT   = 5'h03;
-parameter EXC_CAUSE_LOAD_FAULT   = 5'h05;
-parameter EXC_CAUSE_STORE_FAULT  = 5'h07;
-parameter EXC_CAUSE_ECALL_UMODE  = 5'h08;
 parameter EXC_CAUSE_ECALL_MMODE  = 5'h0B;
 
 // Interrupt mask
 parameter IRQ_MASK = 32'hFFFF0888;
-
-// Trap mux selector
-parameter TRAP_MACHINE      = 2'b00;
-parameter TRAP_USER         = 2'b01;
 
 // Debug Cause
 parameter DBG_CAUSE_NONE       = 3'h0;

@@ -1,69 +1,35 @@
-// Copyright 2018 ETH Zurich and University of Bologna.
-// Copyright and related rights are licensed under the Solderpad Hardware
-// License, Version 0.51 (the "License"); you may not use this file except in
-// compliance with the License.  You may obtain a copy of the License at
-// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
-// or agreed to in writing, software, hardware and materials distributed under
-// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-// CONDITIONS OF ANY KIND, either express or implied. See the License for the
-// specific language governing permissions and limitations under the License.
-
-////////////////////////////////////////////////////////////////////////////////
-// Engineer:       Davide Schiavone - pschiavo@iis.ee.ethz.ch                 //
-//                                                                            //
-// Additional contributions by:                                               //
-//                                                                            //
-// Design Name:    Interrupt Controller                                       //
-// Project Name:   RI5CY                                                      //
-// Language:       SystemVerilog                                              //
-//                                                                            //
-// Description:    Interrupt Controller of the pipelined processor            //
-//                                                                            //
-////////////////////////////////////////////////////////////////////////////////
-
 module cv32e40p_int_controller import cv32e40p_pkg::*;
-#(
-  parameter PULP_SECURE = 0
-)
 (
   input  logic        clk,
   input  logic        rst_n,
 
   // External interrupt lines
   input  logic [31:0] irq_i,                    // Level-triggered interrupt inputs
-  input  logic        irq_sec_i,                // Interrupt secure bit from EU
 
   // To cv32e40p_controller
   output logic        irq_req_ctrl_o,
-  output logic        irq_sec_ctrl_o,
-  output logic  [4:0] irq_id_ctrl_o,
+  output logic [4:0]  irq_id_ctrl_o,
   output logic        irq_wu_ctrl_o,
 
   // To/from cv32e40p_cs_registers
   input  logic [31:0] mie_bypass_i,             // MIE CSR (bypass)
   output logic [31:0] mip_o,                    // MIP CSR
-  input  logic        m_ie_i,                   // Interrupt enable bit from CSR (M mode)
-  input  logic        u_ie_i,                   // Interrupt enable bit from CSR (U mode)
-  input  PrivLvl_t    current_priv_lvl_i
+  input  logic        m_ie_i                    // Interrupt enable bit from CSR (M mode)
 );
 
   logic        global_irq_enable;
   logic [31:0] irq_local_qual;
   logic [31:0] irq_q;
-  logic        irq_sec_q;
 
   // Register all interrupt inputs (on gated clock). The wake-up logic will
   // observe irq_i as well, but in all other places irq_q will be used to 
   // avoid timing paths from irq_i to instr_*_o
 
-  always_ff @(posedge clk, negedge rst_n)
-  begin
+  always_ff @(posedge clk, negedge rst_n) begin
     if (rst_n == 1'b0) begin
-      irq_q     <= '0;
-      irq_sec_q <= 1'b0;
+      irq_q <= '0;
     end else begin
-      irq_q     <= irq_i & IRQ_MASK;
-      irq_sec_q <= irq_sec_i;
+      irq_q <= irq_i & IRQ_MASK;
     end
   end
 
@@ -77,13 +43,7 @@ module cv32e40p_int_controller import cv32e40p_pkg::*;
   assign irq_wu_ctrl_o = |(irq_i & mie_bypass_i);
 
   // Global interrupt enable
-  generate
-    if (PULP_SECURE) begin : gen_pulp_secure
-      assign global_irq_enable = ((u_ie_i || irq_sec_i) && current_priv_lvl_i == PRIV_LVL_U) || (m_ie_i && current_priv_lvl_i == PRIV_LVL_M);
-    end else begin : gen_no_pulp_secure
-      assign global_irq_enable = m_ie_i;
-    end
-  endgenerate
+  assign global_irq_enable = m_ie_i;
 
   // Request to take interrupt if there is a locally enabled interrupt while interrupts are also enabled globally
   assign irq_req_ctrl_o = (|irq_local_qual) && global_irq_enable;
@@ -92,9 +52,7 @@ module cv32e40p_int_controller import cv32e40p_pkg::*;
   //
   // - sets correct id to request to ID
   // - encodes priority order
-
-  always_comb
-  begin
+  always_comb begin
     if      (irq_local_qual[31]) irq_id_ctrl_o = 5'd31;                         // Custom irq_i[31]
     else if (irq_local_qual[30]) irq_id_ctrl_o = 5'd30;                         // Custom irq_i[30]
     else if (irq_local_qual[29]) irq_id_ctrl_o = 5'd29;                         // Custom irq_i[29]
@@ -135,7 +93,5 @@ module cv32e40p_int_controller import cv32e40p_pkg::*;
 
     else irq_id_ctrl_o = CSR_MTIX_BIT;                                          // Value not relevant
   end
-
-  assign irq_sec_ctrl_o = irq_sec_q;
 
 endmodule // cv32e40p_int_controller
