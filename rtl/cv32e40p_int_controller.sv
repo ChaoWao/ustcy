@@ -8,13 +8,13 @@ module cv32e40p_int_controller import cv32e40p_pkg::*;
 
   // To cv32e40p_controller
   output logic        irq_req_ctrl_o,
-  output logic  [4:0] irq_id_ctrl_o,
+  output logic [4:0]  irq_id_ctrl_o,
   output logic        irq_wu_ctrl_o,
 
   // To/from cv32e40p_cs_registers
   input  logic [31:0] mie_bypass_i,             // MIE CSR (bypass)
   output logic [31:0] mip_o,                    // MIP CSR
-  input  logic        m_ie_i                   // Interrupt enable bit from CSR (M mode)
+  input  logic        m_ie_i                    // Interrupt enable bit from CSR (M mode)
 );
 
   logic        global_irq_enable;
@@ -25,12 +25,11 @@ module cv32e40p_int_controller import cv32e40p_pkg::*;
   // observe irq_i as well, but in all other places irq_q will be used to 
   // avoid timing paths from irq_i to instr_*_o
 
-  always_ff @(posedge clk, negedge rst_n)
-  begin
+  always_ff @(posedge clk, negedge rst_n) begin
     if (rst_n == 1'b0) begin
-      irq_q     <= '0;
+      irq_q <= '0;
     end else begin
-      irq_q     <= irq_i & IRQ_MASK;
+      irq_q <= irq_i & IRQ_MASK;
     end
   end
 
@@ -53,9 +52,7 @@ module cv32e40p_int_controller import cv32e40p_pkg::*;
   //
   // - sets correct id to request to ID
   // - encodes priority order
-
-  always_comb
-  begin
+  always_comb begin
     if      (irq_local_qual[31]) irq_id_ctrl_o = 5'd31;                         // Custom irq_i[31]
     else if (irq_local_qual[30]) irq_id_ctrl_o = 5'd30;                         // Custom irq_i[30]
     else if (irq_local_qual[29]) irq_id_ctrl_o = 5'd29;                         // Custom irq_i[29]
@@ -96,6 +93,5 @@ module cv32e40p_int_controller import cv32e40p_pkg::*;
 
     else irq_id_ctrl_o = CSR_MTIX_BIT;                                          // Value not relevant
   end
-
 
 endmodule // cv32e40p_int_controller
