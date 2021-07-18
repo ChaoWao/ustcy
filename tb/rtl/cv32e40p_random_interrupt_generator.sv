@@ -25,26 +25,24 @@
 //                                                                                                          //
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-module cv32e40p_random_interrupt_generator
-  import cv32e40p_pkg::*;
-(
-    input  logic        rst_ni,
-    input  logic        clk_i,
-    input  logic        irq_i,
-    input  logic        irq_ack_i,
-    output logic [18:0] irq_rnd_lines_o,
-    output logic        irq_ack_o,
-    input  logic [31:0] irq_mode_i,
-    input  logic [31:0] irq_min_cycles_i,
-    input  logic [31:0] irq_max_cycles_i,
-    input  logic [31:0] irq_min_id_i,
-    input  logic [31:0] irq_max_id_i,
-    output logic [31:0] irq_act_id_o,
-    output logic        irq_id_we_o,
-    input  logic [31:0] irq_pc_id_i,
-    input  logic [31:0] irq_pc_trig_i,
-    // software defined mode i/o
-    input  logic [31:0] irq_lines_i
+module cv32e40p_random_interrupt_generator import cv32e40p_pkg::*; (
+  input  logic        rst_ni,
+  input  logic        clk_i,
+  input  logic        irq_i,
+  input  logic        irq_ack_i,
+  output logic [18:0] irq_rnd_lines_o,
+  output logic        irq_ack_o,
+  input  logic [31:0] irq_mode_i,
+  input  logic [31:0] irq_min_cycles_i,
+  input  logic [31:0] irq_max_cycles_i,
+  input  logic [31:0] irq_min_id_i,
+  input  logic [31:0] irq_max_id_i,
+  output logic [31:0] irq_act_id_o,
+  output logic        irq_id_we_o,
+  input  logic [31:0] irq_pc_id_i,
+  input  logic [31:0] irq_pc_trig_i,
+  // software defined mode i/o
+  input  logic [31:0] irq_lines_i
 );
 
   import perturbation_pkg::*;
@@ -71,18 +69,16 @@ module cv32e40p_random_interrupt_generator
   logic        ack_flag;
   logic        irq_lines_changed;
 
-
   // struct irq_lines
   typedef struct packed {
-    logic irq_software;
-    logic irq_timer;
-    logic irq_external;
-    logic [15:0] irq_fast;
+      logic irq_software;
+      logic irq_timer;
+      logic irq_external;
+      logic [15:0] irq_fast;
   } Interrupts_tb_t;
 
   Interrupts_tb_t irq_lines_q, irq_lines_n;
   Interrupts_tb_t irq_rnd_lines, irq_pc_trig_lines, irq_sd_lines;
-
 
   assign irq_ack_o       = irq_ack_i;
   assign irq_rnd_lines_o = irq_lines_q;
@@ -103,20 +99,16 @@ module cv32e40p_random_interrupt_generator
         // UPDATE LOGIC:
         // random irq word id stored and updated every time
         // an interrupt is taken by the core
-
         irq_lines_n = irq_rnd_lines;
       end
-
       PC_TRIG: begin
         // TODO generate individual irq lines
         irq_lines_n = irq_pc_trig_lines;
       end
-
       SOFTWARE_DEFINED: begin
         // UPDATE LOGIC:
         irq_lines_n = irq_sd_lines;
       end
-
       default: begin
         irq_lines_n = '0;
       end
@@ -126,7 +118,6 @@ module cv32e40p_random_interrupt_generator
   // RANDOM INTERRUPTS PROCESS
   // Generates a random word irq_rnd_lines [18:0] at a random time.
   // The generated word is stored in irq_lines_q.
-
   initial begin
     automatic rand_irq_cycles wait_cycles = new();
     automatic rand_irq_id value = new();
@@ -135,77 +126,62 @@ module cv32e40p_random_interrupt_generator
     irq_rnd_lines = '0;
     while (1) begin
       @(posedge clk_i);
-
       wait(irq_mode_q == RANDOM);
       min_irq_id = irq_min_id_i;
       max_irq_id = irq_max_id_i;
       min_irq_cycles = irq_min_cycles_i;
       max_irq_cycles = irq_max_cycles_i;
-
       // generate random word and mask it with lower/upper bounds
       do begin
         temp = value.randomize();
-
         // These lines are not used by the processor
         value.rand_word[2:0] = '0;
         value.rand_word[6:4] = '0;
         value.rand_word[10:8] = '0;
         value.rand_word[15:12] = '0;
-
         for (int i = min_irq_id - 1; i >= 0; i--) begin
           value.rand_word[i] = 0;
         end
-
         for (int i = max_irq_id + 1; i <= 31; i++) begin
           value.rand_word[i] = 0;
         end
         // Randomize again if value.rand_word == '0, because irq_line should be one-hot
       end while (!(|value.rand_word));
-
       temp = wait_cycles.randomize() with{
-n >= min_irq_cycles;
-n <= max_irq_cycles;
-};
-
+          n >= min_irq_cycles;
+          n <= max_irq_cycles;
+      };
       irq_random    = 1'b1;
       irq_act_id_o  = value.n;
       @(posedge clk_i);
       irq_random = 1'b0;
-
       // random irq word: update logic
       while (wait_cycles.n) begin
         @(posedge clk_i) irq_lines <= irq_lines_i;
         wait_cycles.n--;
       end
-
       // map random irq word to physical lines
       irq_rnd_lines.irq_software = value.rand_word[3];
       irq_rnd_lines.irq_timer    = value.rand_word[7];
       irq_rnd_lines.irq_external = value.rand_word[11];
       irq_rnd_lines.irq_fast     = value.rand_word[31:16];
-
       //clear interrupt request
       wait(irq_mode_q == STANDARD);
       irq_rnd_lines = '0;
-
     end
   end
 
   // check if signal changed @posedge
   assign irq_lines_changed = (irq_lines != irq_lines_i) ? 1 : 0;
 
-
   // SOFTWARE DEFINED INTERRUPTS PROCESS
   // Samples irq lines (word) as defined by software
-
   initial begin
     irq_sd_lines = 32'b0;
     while (1) begin
       irq_sd   = 1'b0;
       ack_flag = 1'b0;
-
       wait(irq_mode_q == SOFTWARE_DEFINED);
-
       // blocking wait for a valid sd_id
       while (irq_lines_i != 0) begin
         @(posedge clk_i);
@@ -216,9 +192,7 @@ n <= max_irq_cycles;
         irq_sd_lines.irq_fast     = irq_lines_i[31:16];
         irq_sd                    = 1'b1;
       end
-
       @(posedge clk_i);
-
     end
   end
 
@@ -231,13 +205,11 @@ n <= max_irq_cycles;
     wait(irq_mode_q == PC_TRIG);
     wait(irq_pc_id_i == irq_pc_trig_i);
     irq_monitor                    = 1'b1;
-
     // build irq monitor word
     irq_pc_trig_lines.irq_software = 1'b1;
     irq_pc_trig_lines.irq_timer    = irq_lines_i[7];
     irq_pc_trig_lines.irq_external = irq_lines_i[11];
     irq_pc_trig_lines.irq_fast     = irq_lines_i[31:16];
-
     irq_monitor                    = 1'b0;
     irq_id_monitor                 = '0;
   end
@@ -252,4 +224,5 @@ n <= max_irq_cycles;
   end
 
 `endif
+
 endmodule
