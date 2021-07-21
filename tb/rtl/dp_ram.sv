@@ -10,29 +10,29 @@
 // specific language governing permissions and limitations under the License.
 
 module dp_ram #(
-  parameter ADDR_WIDTH = 8,
-  parameter INSTR_RDATA_WIDTH = 128
+    parameter ADDR_WIDTH = 8,
+    parameter INSTR_RDATA_WIDTH = 128
 ) (
-  input logic                          clk_i,
+    input logic clk_i,
 
-  input  logic                         en_a_i,
-  input  logic [ADDR_WIDTH-1:0]        addr_a_i,
-  input  logic [31:0] wdata_a_i,
-  output logic [INSTR_RDATA_WIDTH-1:0] rdata_a_o,
-  input  logic                         we_a_i,
-  input  logic [3:0]                   be_a_i,
+    input  logic                         en_a_i,
+    input  logic [       ADDR_WIDTH-1:0] addr_a_i,
+    input  logic [                 31:0] wdata_a_i,
+    output logic [INSTR_RDATA_WIDTH-1:0] rdata_a_o,
+    input  logic                         we_a_i,
+    input  logic [                  3:0] be_a_i,
 
-  input  logic                         en_b_i,
-  input  logic [ADDR_WIDTH-1:0]        addr_b_i,
-  input  logic [31:0]                  wdata_b_i,
-  output logic [31:0]                  rdata_b_o,
-  input  logic                         we_b_i,
-  input  logic [3:0]                   be_b_i
+    input  logic                  en_b_i,
+    input  logic [ADDR_WIDTH-1:0] addr_b_i,
+    input  logic [          31:0] wdata_b_i,
+    output logic [          31:0] rdata_b_o,
+    input  logic                  we_b_i,
+    input  logic [           3:0] be_b_i
 );
 
   localparam bytes = 2 ** ADDR_WIDTH;
 
-  logic [7:0]            mem[bytes];
+  logic [           7:0] mem        [bytes];
   logic [ADDR_WIDTH-1:0] addr_a_int;
   logic [ADDR_WIDTH-1:0] addr_b_int;
 
@@ -52,12 +52,14 @@ module dp_ram #(
         if (be_b_i[1]) mem[addr_b_int+1] <= wdata_b_i[8+:8];
         if (be_b_i[2]) mem[addr_b_int+2] <= wdata_b_i[16+:8];
         if (be_b_i[3]) mem[addr_b_int+3] <= wdata_b_i[24+:8];
-      end else begin
-        /* handle reads */
-        if ($test$plusargs("verbose")) begin
+      end
+            /* handle reads */
+            else
+      begin
+        if ($test$plusargs("verbose"))
           $display("read  addr=0x%08x: data=0x%08x", addr_b_int, {
                    mem[addr_b_int+3], mem[addr_b_int+2], mem[addr_b_int+1], mem[addr_b_int+0]});
-        end
+
         rdata_b_o[7:0]   <= mem[addr_b_int];
         rdata_b_o[15:8]  <= mem[addr_b_int+1];
         rdata_b_o[23:16] <= mem[addr_b_int+2];
